@@ -29,7 +29,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 HOME = Path.home()
 DIR = Path(os.environ.get("MUPPA_DIR") or HOME / ".muppa")
 TEMPLATES = DIR / "mallar.json"
@@ -2212,6 +2212,59 @@ def ask_user(a):
     out("    " + dim(f"profil: {a['profile']}"))
 
 
+def find_puppa():
+    """Kusinen Puppa, om den är installerad (i PATH, i ~/.ruppa/bin eller ~/.local/bin)."""
+    p = shutil.which("puppa")
+    if p:
+        return p
+    for d in (HOME / ".ruppa" / "bin", HOME / ".local" / "bin", HOME / ".puppa" / "bin"):
+        for n in ("puppa.cmd", "puppa") if IS_WIN else ("puppa",):
+            if (d / n).exists():
+                return str(d / n)
+    return None
+
+
+def tenant_users():
+    """Alla användare i tenanten via Puppa: (tenant, [(upn, namn, detalj)]) eller (None, None).
+    Puppa loggar in i Graph om det behövs; det syns i terminalen (stderr), svaret kommer som JSON på stdout."""
+    pp = find_puppa()
+    if not pp:
+        return None, None
+    cmd = [pp, "uppslag", "user", "--alla", "--json"]
+    if IS_WIN and pp.lower().endswith(".cmd"):
+        cmd = ["cmd", "/c"] + cmd
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", timeout=900)
+        data = json.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
+    except Exception:
+        return None, None
+    if not data.get("ok"):
+        return None, None
+    return data.get("tenant", ""), [(i["value"], i["name"], i.get("detail", "")) for i in data.get("items", [])]
+
+
+def ask_upn(a):
+    """Användarens e-post i Entra ID: välj i tenanten via Puppa (fuzzy-sök, användarnamnet som förslag) eller skriv."""
+    if find_puppa() and confirm("Söka upp användaren i tenanten via Puppa?", True):
+        out("    " + dim("Hämtar användarna i tenanten (Puppa loggar in i Graph om det behövs)…"))
+        tenant, users = tenant_users()
+        if users:
+            first = fuzzy_rank(a.get("user") or "", users, lambda u: f"{u[1]} {u[0]}") if a.get("user") else []
+            rest = [u for u in users if u not in first]
+            rows = [dict(label=n, hint=d or v, value=v) for v, n, d in first + rest]
+            rows.append(dict(label="Skriv själv…", hint="annan adress", value="__egen__"))
+            v = choose(rows, title=f"Användaren i Entra ID{f' · {tenant}' if tenant else ''} – skriv för att söka",
+                       start=rows[0]["value"] if first else None)
+            if v is None:
+                raise Cancel()
+            if v != "__egen__":
+                return v
+        else:
+            out("    " + yellow("Kunde inte hämta användarna. Skriv adressen själv."))
+    return ask_text("Användarens e-post (UPN) i Entra ID" + dim(" (valfritt, enter hoppar över)"),
+                    default=a.get("upn") or "")
+
+
 def ask_malmapp(a):
     default = malmapp_for(a)
 
@@ -2306,6 +2359,9 @@ def wizard(a, intro=True):
     if confirm("Fylla i kund, ansvarig, dator m.m.? (valfritt, hamnar i checklistan)",
                any(a.get(k) for k, _ in OPTIONAL_FIELDS)):
         for k, label in OPTIONAL_FIELDS:
+            if k == "upn":
+                a[k] = ask_upn(a)
+                continue
             a[k] = ask_text(label + dim(" (valfritt, enter hoppar över)"), default=a.get(k) or "")
     ask_steps(a)
     global DIRTY

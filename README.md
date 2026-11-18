@@ -35,7 +35,9 @@ Från en lokal kopia: `./install.sh` / `./install.ps1`. `muppa --version` visar 
    `C:\temp\<användare>`), **vilka mappar som ska kopieras** (kryssrutor: Skrivbord, Dokument, Bilder, Hämtade filer,
    Musik, Videor, Favoriter, Kontakter, Sticky Notes, Outlook-signaturer och egna sökvägar), vad som ska hända med filer
    som bara finns i OneDrive-molnet, webbläsare (Edge/Chrome), BitLocker (pausa, stäng av, bara spara nyckeln), lokalt
-   admin-konto, domän/Entra ID och valfria uppgifter (kund, ansvarig, dator, UPN, tekniker, ärende). Sist väljer du
+   admin-konto, domän/Entra ID och valfria uppgifter (kund, ansvarig, dator, UPN, tekniker, ärende). Är kusinen
+   [Puppa](https://github.com/pipebreak33/puppa) installerad kan UPN:en väljas direkt bland tenantens användare, med
+   fuzzy-sök och användarnamnet som förslag. Sist väljer du
    **vilka steg som ska ingå**. Alla steg kan väljas bort.
 2. **Förhandsvisning.** Bläddra i skriptet och checklistan, ändra svaren, och spara sedan
    `Migrera-<användare>.ps1` + `Checklista-<användare>.md` i `~/Documents/Muppa/`.
