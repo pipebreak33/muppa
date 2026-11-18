@@ -29,6 +29,24 @@ Installern hittar (eller på Windows installerar) Python 3.8+, lägger Muppa i `
 `~/.muppa` rörs aldrig vid uppdatering. Styr källan med `MUPPA_REPO=ägare/repo` och `MUPPA_BRANCH=gren`.
 Från en lokal kopia: `./install.sh` / `./install.ps1`. `muppa --version` visar versionen.
 
+
+## Avinstallera
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.ps1 | iex
+```
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.sh | sh
+```
+
+Tar bort programmet och kommandot `muppa` (och PATH-posten på Windows). Det behåller dina mallar i `~/.muppa` och skapade skript i `~/Documents/Muppa`.
+`MUPPA_PURGE=1` tar bort även dina data, och `MUPPA_YES=1` hoppar över frågan.
+
 ## Så funkar det
 
 1. **Frågor.** Användare (på Windows listas `C:\Users\*`, annars skriver du namnet), målmapp (standard

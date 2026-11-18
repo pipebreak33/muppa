@@ -5,6 +5,7 @@
 # Styr källan med MUPPA_REPO=ägare/repo och MUPPA_BRANCH=gren (eller en release-tagg).
 # Inga frågor: exitkod 0 = installerat, annat = fel.
 set -eu
+START="$(date +%s)"
 
 REPO="${MUPPA_REPO:-pipebreak33/muppa}"
 BRANCH="${MUPPA_BRANCH:-main}"
@@ -89,4 +90,6 @@ case ":$PATH:" in
 esac
 
 VER="$("$PY" "$APP/muppa.py" --version 2>/dev/null || echo muppa)"
-printf '\n  \033[38;5;42m✔\033[0m %s installerad. Kör: \033[1mmuppa\033[0m\n\n' "$VER"
+SECS=$(( $(date +%s) - START )); if [ "$SECS" -ge 60 ]; then TOOK="$((SECS / 60)) min $((SECS % 60)) s"; else TOOK="$SECS s"; fi
+printf '\n  \033[38;5;42m✔\033[0m %s installerad på %s. Kör: \033[1mmuppa\033[0m\n' "$VER" "$TOOK"
+printf '  \033[2mAvinstallera: curl -fsSL https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.sh | sh\033[0m\n\n'
