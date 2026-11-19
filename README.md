@@ -1,16 +1,19 @@
 # Muppa
 
+**English** · [Svenska](README.sv.md)
+
 <p align="center">
-  <img src="assets/muppa.svg" alt="Muppa: Hej! Jag är Muppa." width="720">
+  <img src="assets/muppa.svg" alt="Muppa: Hi! I'm Muppa." width="720">
 </p>
 
-Flytta en Windows-dator från en **lokal AD-domän till Entra ID** utan att skriva skriptet själv.
-Du svarar på några frågor, och Muppa skapar ett **anpassat PowerShell-skript** och en **checklista** för just den
-migreringen. Fungerar likadant på **Windows, macOS och Linux**, så skriptet kan förberedas på din egen dator.
-Kusin till [Puppa](https://github.com/pipebreak33/puppa) och [uppa](https://github.com/pipebreak33/uppa).
-Maskoten är ett M med ögon. Den blinkar, tittar runt och blir glad när skriptet är sparat.
+Move a Windows computer from an **on-premises AD domain to Entra ID** without writing the script yourself.
+You answer a few questions, and Muppa creates a **tailored PowerShell script** and a **checklist** for that particular
+migration. Works the same on **Windows, macOS and Linux**, so the script can be prepared on your own computer.
+One of the tools in the troupe with [Uppa](https://github.com/pipebreak33/uppa), [Puppa](https://github.com/pipebreak33/puppa),
+[Euppa](https://github.com/pipebreak33/euppa), [Ruppa](https://github.com/pipebreak33/ruppa) and [Wuppa](https://github.com/pipebreak33/wuppa).
+The mascot is an M with eyes. It blinks, looks around and is happy when the script is saved.
 
-## Installera (eller uppdatera – kör samma rad igen)
+## Install (or update: run the same line again)
 
 **Windows** (PowerShell):
 
@@ -24,13 +27,12 @@ irm https://raw.githubusercontent.com/pipebreak33/muppa/main/install.ps1 | iex
 curl -fsSL https://raw.githubusercontent.com/pipebreak33/muppa/main/install.sh | sh
 ```
 
-Installern hittar (eller på Windows installerar) Python 3.8+, lägger Muppa i `~/.muppa/app` och skapar kommandot
-`muppa` (`~/.local/bin/muppa`, eller `%USERPROFILE%\.muppa\bin\muppa.cmd` + PATH på Windows). Dina mallar i
-`~/.muppa` rörs aldrig vid uppdatering. Styr källan med `MUPPA_REPO=ägare/repo` och `MUPPA_BRANCH=gren`.
-Från en lokal kopia: `./install.sh` / `./install.ps1`. `muppa --version` visar versionen.
+The installer finds (or on Windows installs) Python 3.8+, puts Muppa in `~/.muppa/app` and creates the command
+`muppa` (`~/.local/bin/muppa`, or `%USERPROFILE%\.muppa\bin\muppa.cmd` + PATH on Windows). Your templates in
+`~/.muppa` are never touched by an update. Choose the source with `MUPPA_REPO=owner/repo` and `MUPPA_BRANCH=branch`.
+From a local copy: `./install.sh` / `./install.ps1`. `muppa --version` shows the version.
 
-
-## Avinstallera
+## Uninstall
 
 **Windows** (PowerShell):
 
@@ -44,77 +46,84 @@ irm https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.ps1 | iex
 curl -fsSL https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.sh | sh
 ```
 
-Tar bort programmet och kommandot `muppa` (och PATH-posten på Windows). Det behåller dina mallar i `~/.muppa` och skapade skript i `~/Documents/Muppa`.
-`MUPPA_PURGE=1` tar bort även dina data, och `MUPPA_YES=1` hoppar över frågan.
+Removes the program and the `muppa` command (and the PATH entry on Windows). Your templates in `~/.muppa` and created scripts in `~/Documents/Muppa` are kept.
+`MUPPA_PURGE=1` removes your data too, and `MUPPA_YES=1` skips the question.
 
-## Så funkar det
+## How it works
 
-1. **Frågor.** Användare (på Windows listas `C:\Users\*`, annars skriver du namnet), målmapp (standard
-   `C:\temp\<användare>`), **vilka mappar som ska kopieras** (kryssrutor: Skrivbord, Dokument, Bilder, Hämtade filer,
-   Musik, Videor, Favoriter, Kontakter, Sticky Notes, Outlook-signaturer och egna sökvägar), vad som ska hända med filer
-   som bara finns i OneDrive-molnet, webbläsare (Edge/Chrome), BitLocker (pausa, stäng av, bara spara nyckeln), lokalt
-   admin-konto, domän/Entra ID och valfria uppgifter (kund, ansvarig, dator, UPN, tekniker, ärende). Är kusinen
-   [Puppa](https://github.com/pipebreak33/puppa) installerad kan UPN:en väljas direkt bland tenantens användare, med
-   fuzzy-sök och användarnamnet som förslag. Sist väljer du
-   **vilka steg som ska ingå**. Alla steg kan väljas bort.
-2. **Förhandsvisning.** Bläddra i skriptet och checklistan, ändra svaren, och spara sedan
-   `Migrera-<användare>.ps1` + `Checklista-<användare>.md` i `~/Documents/Muppa/`.
-3. **Mallar.** Spara valen som en mall, t.ex. *Standard: Skrivbord+Dokument+Bilder+Hämtade · Edge · BitLocker paus*.
-   Nästa migrering börjar då med mallen. Mallar (`~/.muppa/mallar.json`) innehåller inga lösenord eller hemligheter.
+1. **Questions.** The user (on Windows `C:\Users\*` is listed, otherwise you type the name), the target folder (default
+   `C:\temp\<user>`), **which folders to copy** (checkboxes: Desktop, Documents, Pictures, Downloads,
+   Music, Videos, Favorites, Contacts, Sticky Notes, Outlook signatures and your own paths), what should happen to files
+   that only exist in the OneDrive cloud, browsers (Edge/Chrome), BitLocker (suspend, turn off, only save the key), a local
+   admin account, domain/Entra ID and optional details (customer, responsible, computer, UPN, technician, ticket). If
+   [Puppa](https://github.com/pipebreak33/puppa) is installed, the UPN can be picked straight from the tenant's users, with
+   fuzzy search and the user name as a suggestion. Last you choose
+   **which steps to include**. Every step can be left out.
+2. **Preview.** Scroll through the script and the checklist, change the answers, and then save
+   `Migrera-<user>.ps1` + `Checklista-<user>.md` in `~/Documents/Muppa/`.
+3. **Templates.** Save the choices as a template, e.g. *Standard: Desktop+Documents+Pictures+Downloads · Edge · BitLocker suspended*.
+   The next migration then starts from the template. Templates (`~/.muppa/mallar.json`) contain no passwords or secrets.
 
-Guiden styrs som syskonen: piltangenter, siffror som snabbval, mellanslag som kryssar och fuzzy-sökning när du börjar
-skriva. Ctrl+C avbryter.
+The wizard works like the rest of the troupe: arrow keys, digits as shortcuts, space to tick and fuzzy search when you start
+typing. Ctrl+C cancels.
 
-## Kommandon
+## Language
+
+Muppa speaks **English** by default and **Swedish** on request: the wizard, the script's messages and the checklist.
+The choice is shared by the whole troupe: `muppa lang sv` or `muppa lang en`, or the **Language** row in the menu. The script
+gets a line `$Sprak = 'en'` at the top, which you can change afterwards. Swedish commands (`muppa ny`, `--mall` …) still work.
+
+## Commands
 
 | | |
 |---|---|
-| `muppa` | menyn |
-| `muppa ny [--mall NAMN]` | guiden |
-| `muppa skapa ANVÄNDARE [--mall NAMN] [--mappar skrivbord,dokument,…] [--egen SÖKVÄG] [--webblasare edge,chrome] [--bitlocker pausa\|stang-av\|spara\|ingen] [--doman bada\|doman\|entra\|inget] [--admin NAMN \| --ingen-admin] [--kund …] [--ansvarig …] [--dator …] [--upn …]` | skript + checklista utan frågor |
-| `muppa mallar` | lista mallar |
-| `--no-anim` | inga animationer (stängs också av av `NO_COLOR` och när utdata pipas) |
+| `muppa` | the menu |
+| `muppa new [--template NAME]` | the wizard |
+| `muppa create USER [--template NAME] [--folders skrivbord,dokument,…] [--path PATH] [--browsers edge,chrome] [--bitlocker pausa\|stang-av\|spara\|ingen] [--domain bada\|doman\|entra\|inget] [--admin NAME \| --no-admin] [--customer …] [--responsible …] [--computer …] [--upn …]` | script + checklist without questions |
+| `muppa templates` | list templates |
+| `muppa lang [en\|sv]` | language for the whole troupe |
+| `--no-anim` | no animations (also off with `NO_COLOR` and when the output is piped) |
 
-## Skriptet
+## The script
 
-Skriptet är för **Windows PowerShell 5.1** och körs på datorn som migreras. Det körs i fyra faser:
+The script is for **Windows PowerShell 5.1** and runs on the computer being migrated. It runs in four phases:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Migrera-anna.ps1 -Torrkorning   # provkör: visar bara vad som görs (= -WhatIf)
-powershell.exe -ExecutionPolicy Bypass -File .\Migrera-anna.ps1                # som admin: förbered
-powershell.exe -ExecutionPolicy Bypass -File C:\temp\anna\Migrera-anna.ps1 -Doman    # som lokal admin: lämna domänen
-powershell.exe -ExecutionPolicy Bypass -File C:\temp\anna\Migrera-anna.ps1 -Entra    # som lokal admin: anslut till Entra ID
-powershell.exe -ExecutionPolicy Bypass -File C:\temp\anna\Migrera-anna.ps1 -Aterlas  # som användaren: läs tillbaka
+powershell.exe -ExecutionPolicy Bypass -File .\Migrera-anna.ps1 -Torrkorning   # try it: only shows what is done (= -WhatIf)
+powershell.exe -ExecutionPolicy Bypass -File .\Migrera-anna.ps1                # as admin: prepare
+powershell.exe -ExecutionPolicy Bypass -File C:\temp\anna\Migrera-anna.ps1 -Doman    # as local admin: leave the domain
+powershell.exe -ExecutionPolicy Bypass -File C:\temp\anna\Migrera-anna.ps1 -Entra    # as local admin: join Entra ID
+powershell.exe -ExecutionPolicy Bypass -File C:\temp\anna\Migrera-anna.ps1 -Aterlas  # as the user: restore
 ```
 
-| Fas | Vad som händer |
+| Phase | What happens |
 |---|---|
-| förbered | Kontrollerar adminrättigheter, loggar allt (`Start-Transcript`) till målmappen och kopierar skriptet dit. **Mappar:** läser den verkliga sökvägen ur användarens `User Shell Folders` (laddar `NTUSER.DAT` om användaren inte är inloggad), så att mappar som är omdirigerade till OneDrive följs. Mäter storleken, räknar filer som **bara finns i molnet** (Files On-Demand) och kontrollerar ledigt utrymme. Kopierar sedan med `robocopy` och översätter exitkoderna till begripliga meddelanden. **BitLocker:** `manage-bde -protectors -get` till fil och säkerhetskopiering till Entra ID/AD om datorn är ansluten. Sedan `Suspend-BitLocker` eller `Disable-BitLocker`. **Webbläsare:** kopierar `Bookmarks` för varje Edge/Chrome-profil och gör om dem till en HTML-fil som går att importera. Lösenord kan inte exporteras automatiskt, så skriptet öppnar `edge://settings/passwords` / `chrome://password-manager/settings` och väntar medan du sparar CSV:n. **Aktivitetsfältet:** kopierar fästa genvägar och `Taskband`-registret och tar en skärmdump. **Admin-konto:** lösenordet frågas efter med `Read-Host -AsSecureString` när skriptet körs. Det står aldrig i skriptet. |
-| `-Doman` | Visar lokala admin-konton, kräver att du skriver **LÄMNA** och kör `Remove-Computer`. Erbjuder omstart. |
-| `-Entra` | Öppnar `ms-settings:workplace` och beskriver steget *Anslut den här enheten till Microsoft Entra ID*. Väntar tills `dsregcmd` visar `AzureAdJoined : YES`, säkerhetskopierar BitLocker-nyckeln till Entra ID och slår på BitLocker igen. |
-| `-Aterlas` | I den nya profilen: kopierar tillbaka med `robocopy /XO` (skriver inte över nyare filer) till mapparna som `User Shell Folders` pekar på. Kontrollerar OneDrive (konto, process, omdirigering), öppnar import av bokmärken och lösenord, visar skärmdumpen, startar Outlook och Teams och erbjuder att radera lösenordsfilerna. |
+| prepare | Checks admin rights, logs everything (`Start-Transcript`) to the target folder and copies the script there. **Folders:** reads the real path from the user's `User Shell Folders` (loads `NTUSER.DAT` if the user is not signed in), so folders redirected to OneDrive are followed. Measures the size, counts files that **only exist in the cloud** (Files On-Demand) and checks free space. Then copies with `robocopy` and turns the exit codes into readable messages. **BitLocker:** `manage-bde -protectors -get` to a file and a backup to Entra ID/AD if the computer is joined. Then `Suspend-BitLocker` or `Disable-BitLocker`. **Browsers:** copies `Bookmarks` for every Edge/Chrome profile and turns them into an HTML file that can be imported. Passwords cannot be exported automatically, so the script opens `edge://settings/passwords` / `chrome://password-manager/settings` and waits while you save the CSV. **Taskbar:** copies the pinned shortcuts and the `Taskband` registry key and takes a screenshot. **Admin account:** the password is asked for with `Read-Host -AsSecureString` when the script runs. It is never in the script. |
+| `-Doman` | Shows the local admin accounts, requires you to type **LEAVE** and runs `Remove-Computer`. Offers a restart. |
+| `-Entra` | Opens `ms-settings:workplace` and describes the step *Join this device to Microsoft Entra ID*. Waits until `dsregcmd` shows `AzureAdJoined : YES`, backs up the BitLocker key to Entra ID and turns BitLocker back on. |
+| `-Aterlas` | In the new profile: copies back with `robocopy /XO` (does not overwrite newer files) to the folders that `User Shell Folders` points to. Checks OneDrive (account, process, redirection), opens the import of bookmarks and passwords, shows the screenshot, starts Outlook and Teams and offers to delete the password files. |
 
-Överst i skriptet finns inställningarna (`$Cfg`, `$Steg`, `$Mappar`). Där kan du stänga av ett steg direkt i
-filen. Ett steg som misslyckas stoppar inte resten: skriptet frågar om det ska fortsätta.
+At the top of the script are the settings (`$Sprak`, `$Cfg`, `$Steg`, `$Mappar`). You can turn off a step right there in the
+file. A step that fails does not stop the rest: the script asks whether to continue.
 
-## Checklistan
+## The checklist
 
-Checklistan tar upp de manuella stegen i rätt ordning, med kryssrutor: återställa lösenordet i Entra ID,
-OneDrive-backup, spara BitLocker-nyckeln utanför datorn, logga in som lokal admin, Windows Hello (hoppa över vid
-första inloggningen), Outlook-profil, Teams, OneDrive-synk, Teams-/SharePoint-bibliotek, fästa ikoner enligt
-skärmdumpen, radera lösenordsfilerna och sist *meddela ansvarig att sätta nytt lösenord*. Kund, ansvarig och dator
-är valfria fält.
+The checklist covers the manual steps in the right order, with checkboxes: reset the password in Entra ID,
+the OneDrive backup, save the BitLocker key outside the computer, sign in as local admin, Windows Hello (skip it at the
+first sign-in), the Outlook profile, Teams, OneDrive sync, Teams/SharePoint libraries, pin icons as in the
+screenshot, delete the password files and finally *tell the person responsible to set a new password*. Customer, responsible and computer
+are optional fields.
 
-## Säkerhet
+## Security
 
-- Inga lösenord sparas, varken i skriptet, i mallarna eller i checklistan.
-- Lösenords-CSV:erna från webbläsarna innehåller klartext. Lägg målmappen på datorn, inte på en delad disk, och radera
-  filerna efter importen. `-Aterlas` frågar.
-- BitLocker-nyckeln hamnar i målmappen på samma disk. Spara den också utanför datorn.
+- No passwords are saved: not in the script, the templates or the checklist.
+- The password CSVs from the browsers contain plain text. Keep the target folder on the computer, not on a shared drive, and delete
+  the files after the import. `-Aterlas` asks.
+- The BitLocker key ends up in the target folder on the same disk. Save it outside the computer as well.
 
-## Teknik
+## Technology
 
-En Python-fil (bara standardbiblioteket, 3.8+). Tangenter läses med `msvcrt` på Windows och `termios` på macOS/Linux.
-Layouten skalar med terminalen: inga rader radbryts, smal layout under 58 kolumner, maskoten döljs under 44, och allt
-ritas om när fönstret ändrar storlek. Det genererade skriptet sparas som UTF-8 med BOM, så att Windows PowerShell 5.1
-läser å, ä och ö rätt.
+One Python file (standard library only, 3.8+). Keys are read with `msvcrt` on Windows and `termios` on macOS/Linux.
+The layout scales with the terminal: no lines wrap, a narrow layout below 58 columns, the mascot hides below 44, and everything
+is redrawn when the window changes size. The generated script is saved as UTF-8 with a BOM, so that Windows PowerShell 5.1
+reads å, ä and ö correctly.

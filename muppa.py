@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""muppa – migrera en Windows-dator från lokal AD-domän till Entra ID. Windows, macOS och Linux.
+"""muppa – migrate a Windows computer from an on-premises AD domain to Entra ID. Windows, macOS and Linux.
 
-  muppa                    meny
-  muppa ny [--mall NAMN]   guiden: frågor → anpassat PowerShell-skript + checklista
-  muppa skapa ANVÄNDARE [--mall NAMN] [flaggor]   skapa skript + checklista utan frågor
-  muppa mallar             lista sparade mallar
-  muppa hej
+  muppa                    menu
+  muppa new [--template NAME]   the wizard: questions → tailored PowerShell script + checklist
+  muppa create USER [--template NAME] [flags]   create script + checklist without questions
+  muppa templates          list saved templates
+  muppa lang [en|sv]       language for the whole troupe (English or Swedish)
+  muppa hello
 
-Guiden frågar efter användare, målmapp, vilka mappar som ska kopieras, webbläsare, BitLocker,
-lokalt admin-konto och domän/Entra ID. Den sparar Migrera-<användare>.ps1 och Checklista-<användare>.md
-i ~/Documents/Muppa. Skriptet är för Windows PowerShell 5.1 och körs som administratör på datorn som
-migreras, i faser: (förbered) · -Doman · -Entra · -Aterlas. -Torrkorning / -WhatIf visar bara vad som görs.
+The wizard asks for the user, target folder, which folders to copy, browsers, BitLocker, a local admin
+account and domain/Entra ID. It saves Migrera-<user>.ps1 and Checklista-<user>.md in ~/Documents/Muppa.
+The script is for Windows PowerShell 5.1 and runs as administrator on the computer being migrated, in phases:
+(prepare) · -Doman · -Entra · -Aterlas. -Torrkorning / -WhatIf only shows what would be done.
 
-Flaggor: --no-anim stänger av animationer.
-Data: ~/.muppa/mallar.json (val, inga hemligheter). Enbart standardbiblioteket, Python 3.8+.
+Flags: --no-anim turns animations off.
+Data: ~/.muppa/mallar.json (choices, no secrets). Standard library only, Python 3.8+.
 """
 from __future__ import annotations
 
@@ -29,7 +30,25 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "1.1.0"
+DOC_SV = """muppa – migrera en Windows-dator från lokal AD-domän till Entra ID. Windows, macOS och Linux.
+
+  muppa                    meny
+  muppa ny [--mall NAMN]   guiden: frågor → anpassat PowerShell-skript + checklista
+  muppa skapa ANVÄNDARE [--mall NAMN] [flaggor]   skapa skript + checklista utan frågor
+  muppa mallar             lista sparade mallar
+  muppa lang [en|sv]       språk för hela truppen (engelska eller svenska)
+  muppa hej
+
+Guiden frågar efter användare, målmapp, vilka mappar som ska kopieras, webbläsare, BitLocker,
+lokalt admin-konto och domän/Entra ID. Den sparar Migrera-<användare>.ps1 och Checklista-<användare>.md
+i ~/Documents/Muppa. Skriptet är för Windows PowerShell 5.1 och körs som administratör på datorn som
+migreras, i faser: (förbered) · -Doman · -Entra · -Aterlas. -Torrkorning / -WhatIf visar bara vad som görs.
+
+Flaggor: --no-anim stänger av animationer.
+Data: ~/.muppa/mallar.json (val, inga hemligheter). Enbart standardbiblioteket, Python 3.8+.
+"""
+
+VERSION = "1.2.0"
 HOME = Path.home()
 DIR = Path(os.environ.get("MUPPA_DIR") or HOME / ".muppa")
 TEMPLATES = DIR / "mallar.json"
@@ -37,6 +56,42 @@ CONFIG = DIR / "config.json"
 OUT_DIR = Path(os.environ.get("MUPPA_UT") or HOME / "Documents" / "Muppa")
 IS_WIN = os.name == "nt"
 IS_MAC = sys.platform == "darwin"
+
+# ───────────────────────────── language ─────────────────────────────
+# One setting for the whole troupe: ~/.truppa/config.json {"lang": "en"|"sv"}. TRUPPA_LANG overrides it. Default: English.
+TRUPPA = Path.home() / ".truppa" / "config.json"
+
+
+def _lang():
+    v = os.environ.get("TRUPPA_LANG")
+    if not v:
+        try:
+            v = json.loads(TRUPPA.read_text(encoding="utf-8")).get("lang")
+        except Exception:
+            v = None
+    return "sv" if str(v or "en").lower().startswith("sv") else "en"
+
+
+LANG = _lang()
+os.environ["TRUPPA_LANG"] = LANG          # PowerShell and the other tools read it too
+
+
+def L(en, sv):
+    """The text in the chosen language (English first)."""
+    return sv if LANG == "sv" else en
+
+
+def set_lang(lang):
+    global LANG
+    TRUPPA.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        cfg = json.loads(TRUPPA.read_text(encoding="utf-8"))
+    except Exception:
+        cfg = {}
+    cfg["lang"] = lang
+    TRUPPA.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+    LANG = lang
+    os.environ["TRUPPA_LANG"] = lang
 
 
 def _win_console():
@@ -72,7 +127,7 @@ def open_path(path):
         else:
             subprocess.Popen([shutil.which("xdg-open") or "xdg-open", str(path)])
     except Exception:
-        out(dim(f"  Öppna själv: {path}"))
+        out(dim(L(f"  Open it yourself: {path}", f"  Öppna själv: {path}")))
 
 
 # ───────────────────────────── terminal ─────────────────────────────
@@ -206,7 +261,17 @@ SHADE = ["38;5;219", "38;5;213", "38;5;177", "38;5;141", "38;5;135", "38;5;99"] 
 SAD_SHADE = ["38;5;189", "38;5;183", "38;5;146", "38;5;103", "38;5;97", "38;5;60"]
 ART_W = 9
 LOGO = "M›"
-JOKES = [
+JOKES_EN = [
+    "My name is Muppa. It stands for Migrate Under Pressure, Allegedly.",
+    "I'm an M. As in Migrate. Or Microsoft. Or Monday.",
+    "The BitLocker key? Save it. Twice. In two places.",
+    "Robocopy exit code 1 means it went well. Yes, really.",
+    "Windows Hello? Not yet. Skip it.",
+    "Files On-Demand: files that exist, and yet they don't. Schrödinger's Documents.",
+    "Remove-Computer: the only command that makes a domain controller feel abandoned.",
+    "There are two kinds of admins: those who take backups, and those who will.",
+]
+JOKES_SV = [
     "Jag heter Muppa. Det står för Migrera Utan Panik. Typ.",
     "Jag är ett M. Som i Migrera. Eller Molnet. Eller Måndag.",
     "BitLocker-nyckeln? Spara den. Två gånger. På två ställen.",
@@ -216,6 +281,7 @@ JOKES = [
     "Remove-Computer: det enda kommandot som får en domänkontrollant att känna sig övergiven.",
     "Det finns två sorters admins: de som tar backup, och de som kommer att göra det.",
 ]
+JOKES = JOKES_SV if LANG == "sv" else JOKES_EN
 
 
 def muppa_art(mood="happy"):
@@ -477,12 +543,12 @@ def choose(rows, title="", msg="", mood="happy", sub="", status=None, start=None
             lines += [""] + status()
         lines.append("")
         if st["q"]:
-            lines.append("  " + accent("⌕ ") + bold(st["q"]) + accent("▏") + dim(f"  {len(sel)} träffar"))
+            lines.append("  " + accent("⌕ ") + bold(st["q"]) + accent("▏") + dim(L(f"  {len(sel)} matches", f"  {len(sel)} träffar")))
         elif title:
             lines.append("  " + accent("▍") + bold(title))
         narrow = w < 58
         if not sel:
-            lines.append("     " + dim("Inga träffar. Backsteg ändrar, esc rensar."))
+            lines.append("     " + dim(L("No matches. Backspace edits, esc clears.", "Inga träffar. Backsteg ändrar, esc rensar.")))
         labels = [vr[k]["label"] for k in sel] or [""]
         lw = min(max(len(x) for x in labels) + 2, max(10, w - 14 if narrow else min(34, w // 2)))
         room = max(3, height() - len(lines) - 3)
@@ -491,7 +557,7 @@ def choose(rows, title="", msg="", mood="happy", sub="", status=None, start=None
         top = max(0, min(top, max(0, len(vr) - room)))
         st["top"] = top
         if top > 0:
-            lines.append(dim("     ↑ fler"))
+            lines.append(dim(L("     ↑ more", "     ↑ fler")))
         num = {k: n for n, k in keys.items()}
         anybadge = any(vr[j].get("badge") for j in sel)
         for k in range(top, min(len(vr), top + room)):
@@ -512,13 +578,13 @@ def choose(rows, title="", msg="", mood="happy", sub="", status=None, start=None
                     line += dim(ANSI.sub("", r["hint"]))
             lines.append(line)
         if top + room < len(vr):
-            lines.append(dim("     ↓ fler"))
+            lines.append(dim(L("     ↓ more", "     ↓ fler")))
         lines.append("")
         if st["q"]:
-            help_ = "↑/↓ · enter väljer · backsteg · esc rensar" if w >= 50 else "↑↓ enter · esc"
+            help_ = L("↑/↓ · enter picks · backspace · esc clears", "↑/↓ · enter väljer · backsteg · esc rensar") if w >= 50 else "↑↓ enter · esc"
         else:
-            help_ = ((footer or "↑/↓ · enter · siffra väljer · q tillbaka") + " · skriv för att söka") if w >= 72 else \
-                (footer or "↑/↓ · enter · q tillbaka") if w >= 50 else "↑↓ enter · q"
+            help_ = ((footer or L("↑/↓ · enter · a digit picks · q back", "↑/↓ · enter · siffra väljer · q tillbaka")) + L(" · type to search", " · skriv för att söka")) if w >= 72 else \
+                (footer or L("↑/↓ · enter · q back", "↑/↓ · enter · q tillbaka")) if w >= 50 else "↑↓ enter · q"
         lines.append(dim("   " + help_))
         live.draw(lines)
 
@@ -617,7 +683,7 @@ def ask_text(question, default="", required=False, check=None, secret=False):
     for k, l in enumerate(wrap(question, w - 6, 6)):
         out(("  " + accent("?") + " " if k == 0 else "    ") + bold(l))
     if default:
-        out("    " + dim("standard: " + cut(default, w - 16) + "  (enter behåller)"))
+        out("    " + dim(L("default: ", "standard: ") + cut(default, w - 16) + L("  (enter keeps it)", "  (enter behåller)")))
     while True:
         try:
             if secret:
@@ -632,7 +698,7 @@ def ask_text(question, default="", required=False, check=None, secret=False):
         if not v:
             v = default
         if not v and required:
-            out("    " + yellow("Det här behövs. Ctrl+C avbryter."))
+            out("    " + yellow(L("This is needed. Ctrl+C cancels.", "Det här behövs. Ctrl+C avbryter.")))
             continue
         if check and v:
             err = check(v)
@@ -660,7 +726,7 @@ def pause():
     """Vänta på enter (eller esc/q) innan skärmen töms. Läser tangenter rått så att piltangenter inte syns som ^[[A."""
     if ITTY:
         print()
-        sys.stdout.write(dim("   enter = fortsätt "))
+        sys.stdout.write(dim(L("   enter = continue ", "   enter = fortsätt ")))
         sys.stdout.flush()
         kb = Keys()
         try:
@@ -680,15 +746,17 @@ def pause():
 
 # ───────────────────────────── PowerShell-delen som är lika i alla skript ─────────────────────────────
 PS_BODY = r'''
+# ─────────────── Below is the same in every script from Muppa. Change the settings above. ───────────────
 # ─────────────── Nedanför är samma i alla skript från Muppa. Ändra inställningarna ovanför. ───────────────
 $ErrorActionPreference = 'Continue'
+function T([string]$en, [string]$sv) { if ($Sprak -eq 'sv') { $sv } else { $en } }
 $Torr = [bool]$Torrkorning -or [bool]$WhatIfPreference
 $SkriptNamn = if ($PSCommandPath) { Split-Path -Leaf $PSCommandPath } else { 'Migrera.ps1' }
 $Faser = @()
 if ($Doman) { $Faser += 'doman' }
 if ($Entra) { $Faser += 'entra' }
 if ($Aterlas) { $Faser += 'aterlas' }
-if ($Faser.Count -gt 1) { Write-Host "  Välj en fas i taget: -Doman, -Entra eller -Aterlas." -ForegroundColor Red; exit 2 }
+if ($Faser.Count -gt 1) { Write-Host (T "  Choose one phase at a time: -Doman, -Entra or -Aterlas." "  Välj en fas i taget: -Doman, -Entra eller -Aterlas.") -ForegroundColor Red; exit 2 }
 $Fas = if ($Faser.Count) { $Faser[0] } else { 'forbered' }
 
 # ── utskrift och frågor ──
@@ -700,16 +768,16 @@ function Fel([string]$Text) { Write-Host "   [X]  $Text" -ForegroundColor Red }
 
 function Atgard([string]$Text, [scriptblock]$Block) {
     # Kör en ändring, eller visar bara vad som skulle göras vid -Torrkorning / -WhatIf.
-    if ($Torr) { Write-Host "   [torrkörning] $Text" -ForegroundColor DarkGray; return }
+    if ($Torr) { Write-Host (T "   [dry run] $Text" "   [torrkörning] $Text") -ForegroundColor DarkGray; return }
     Write-Host "   -> $Text"
     & $Block
 }
 
 function Fraga([string]$Text, [bool]$Standard = $true) {
-    $opt = if ($Standard) { '[J/n]' } else { '[j/N]' }
+    $opt = if ($Standard) { (T '[Y/n]' '[J/n]') } else { (T '[y/N]' '[j/N]') }
     if ($Torr) {
-        $svar = if ($Standard) { 'ja' } else { 'nej' }
-        Write-Host "   $Text $opt  (torrkörning: $svar)" -ForegroundColor DarkGray
+        $svar = if ($Standard) { (T 'yes' 'ja') } else { (T 'no' 'nej') }
+        Write-Host (T "   $Text $opt  (dry run: $svar)" "   $Text $opt  (torrkörning: $svar)") -ForegroundColor DarkGray
         return $Standard
     }
     $s = Read-Host "   $Text $opt"
@@ -724,7 +792,7 @@ function Vanta([string]$Text) {
 
 function AdminVem {
     if ($Cfg.AdminNamn) { return ".\$($Cfg.AdminNamn)" }
-    return 'ett lokalt admin-konto'
+    return (T 'a local admin account' 'ett lokalt admin-konto')
 }
 
 function Format-Storlek([double]$Byte) {
@@ -778,14 +846,14 @@ function Open-AnvandarHive {
         return $script:Hive
     }
     $dat = Join-Path $Cfg.Profil 'NTUSER.DAT'
-    if (-not (Test-Path -LiteralPath $dat)) { Varning "Hittar inte $dat."; return $null }
+    if (-not (Test-Path -LiteralPath $dat)) { Varning (T "Cannot find $dat." "Hittar inte $dat."); return $null }
     & reg.exe load 'HKU\MuppaHive' $dat 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
         $script:Hive = 'HKEY_USERS\MuppaHive'
         $script:HiveLaddad = $true
         return $script:Hive
     }
-    Varning "Kunde inte läsa registret i $dat. Mapparna antas ligga på standardplatsen."
+    Varning (T "Could not read the registry in $dat. The folders are assumed to be in their default location." "Kunde inte läsa registret i $dat. Mapparna antas ligga på standardplatsen.")
     return $null
 }
 
@@ -841,13 +909,13 @@ function Get-Ledigt([string]$Sokvag) {
 }
 
 function Get-RobocopyText([int]$Kod) {
-    if ($Kod -ge 16) { return "allvarligt fel ($Kod): ingenting kopierades. Kontrollera sökvägar och behörighet." }
+    if ($Kod -ge 16) { return (T "serious error ($Kod): nothing was copied. Check paths and permissions." "allvarligt fel ($Kod): ingenting kopierades. Kontrollera sökvägar och behörighet.") }
     $d = @()
-    if ($Kod -band 8) { $d += 'vissa filer kunde inte kopieras (se robocopy.log)' }
-    if ($Kod -band 4) { $d += 'avvikande filer finns i målet' }
-    if ($Kod -band 2) { $d += 'målet har extra filer (de rörs inte)' }
-    if ($Kod -band 1) { $d += 'filer kopierades' }
-    if ($Kod -eq 0) { $d += 'inget att kopiera, målet är redan aktuellt' }
+    if ($Kod -band 8) { $d += (T 'some files could not be copied (see robocopy.log)' 'vissa filer kunde inte kopieras (se robocopy.log)') }
+    if ($Kod -band 4) { $d += (T 'mismatched files exist in the target' 'avvikande filer finns i målet') }
+    if ($Kod -band 2) { $d += (T 'the target has extra files (they are left alone)' 'målet har extra filer (de rörs inte)') }
+    if ($Kod -band 1) { $d += (T 'files were copied' 'filer kopierades') }
+    if ($Kod -eq 0) { $d += (T 'nothing to copy, the target is already up to date' 'inget att kopiera, målet är redan aktuellt') }
     return ($d -join ', ')
 }
 
@@ -933,30 +1001,30 @@ function Test-SammaLosen($A, $B) {
 function Steg-info {
     $a = Get-Anslutning
     $os = Get-CimInstance -ClassName Win32_OperatingSystem
-    Info "Dator:       $($a.Dator)  ($($os.Caption) $($os.Version))"
-    Info "Domän:       $(if ($a.Doman) { $a.DomanNamn } else { 'ingen (arbetsgrupp)' })"
-    Info "Entra ID:    $(if ($a.Entra) { "ansluten ($($a.Tenant))" } else { 'inte ansluten' })"
-    Info "Körs som:    $env:USERDOMAIN\$env:USERNAME"
-    Info "Användare:   $($Cfg.Anvandare)  ($($Cfg.Profil))"
-    if (-not (Test-Path -LiteralPath $Cfg.Profil)) { Varning "Profilmappen $($Cfg.Profil) finns inte på den här datorn." }
+    Info (T "Computer:    $($a.Dator)  ($($os.Caption) $($os.Version))" "Dator:       $($a.Dator)  ($($os.Caption) $($os.Version))")
+    Info (T "Domain:      $(if ($a.Doman) { $a.DomanNamn } else { 'none (workgroup)' })" "Domän:       $(if ($a.Doman) { $a.DomanNamn } else { 'ingen (arbetsgrupp)' })")
+    Info (T "Entra ID:    $(if ($a.Entra) { "joined ($($a.Tenant))" } else { 'not joined' })" "Entra ID:    $(if ($a.Entra) { "ansluten ($($a.Tenant))" } else { 'inte ansluten' })")
+    Info (T "Running as:  $env:USERDOMAIN\$env:USERNAME" "Körs som:    $env:USERDOMAIN\$env:USERNAME")
+    Info (T "User:        $($Cfg.Anvandare)  ($($Cfg.Profil))" "Användare:   $($Cfg.Anvandare)  ($($Cfg.Profil))")
+    if (-not (Test-Path -LiteralPath $Cfg.Profil)) { Varning (T "The profile folder $($Cfg.Profil) does not exist on this computer." "Profilmappen $($Cfg.Profil) finns inte på den här datorn.") }
     try {
         $bl = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop
-        Info "BitLocker:   $($bl.VolumeStatus), skydd $($bl.ProtectionStatus)"
-    } catch { Info 'BitLocker:   kunde inte läsas' }
+        Info (T "BitLocker:   $($bl.VolumeStatus), protection $($bl.ProtectionStatus)" "BitLocker:   $($bl.VolumeStatus), skydd $($bl.ProtectionStatus)")
+    } catch { Info (T 'BitLocker:   could not be read' 'BitLocker:   kunde inte läsas') }
     $admins = Get-LokalaAdmins
-    Info "Lokala admins: $(if ($admins) { $admins -join ', ' } else { 'inga lokala konton' })"
+    Info (T "Local admins: $(if ($admins) { $admins -join ', ' } else { 'no local accounts' })" "Lokala admins: $(if ($admins) { $admins -join ', ' } else { 'inga lokala konton' })")
     if (-not $Torr) {
         $fil = Join-Path $Cfg.Malmapp 'Datorinfo.txt'
-        @("Dator: $($a.Dator)", "OS: $($os.Caption) $($os.Version)", "Domän: $($a.DomanNamn) (med i domän: $($a.Doman))",
-          "Entra ID: $($a.Entra) $($a.Tenant)", "Användare: $($Cfg.Anvandare) ($($Cfg.Profil))",
-          "Lokala admins: $($admins -join ', ')", "Datum: $(Get-Date -Format 'yyyy-MM-dd HH:mm')") |
+        @((T "Computer: $($a.Dator)" "Dator: $($a.Dator)"), "OS: $($os.Caption) $($os.Version)", (T "Domain: $($a.DomanNamn) (domain joined: $($a.Doman))" "Domän: $($a.DomanNamn) (med i domän: $($a.Doman))"),
+          "Entra ID: $($a.Entra) $($a.Tenant)", (T "User: $($Cfg.Anvandare) ($($Cfg.Profil))" "Användare: $($Cfg.Anvandare) ($($Cfg.Profil))"),
+          (T "Local admins: $($admins -join ', ')" "Lokala admins: $($admins -join ', ')"), (T "Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" "Datum: $(Get-Date -Format 'yyyy-MM-dd HH:mm')")) |
             Set-Content -LiteralPath $fil -Encoding UTF8
-        Ok "Sparat i $fil"
+        Ok (T "Saved to $fil" "Sparat i $fil")
     }
 }
 
 function Steg-kopiera {
-    if (-not $Mappar.Count) { Info 'Inga mappar valda.'; return }
+    if (-not $Mappar.Count) { Info (T 'No folders selected.' 'Inga mappar valda.'); return }
     $hive = Open-AnvandarHive
     $lista = @()
     foreach ($m in $Mappar) {
@@ -964,35 +1032,35 @@ function Steg-kopiera {
     }
     Close-AnvandarHive
 
-    Info 'Mäter mapparna …'
+    Info (T 'Measuring the folders …' 'Mäter mapparna …')
     $summa = [int64]0; $moln = 0; $molnByte = [int64]0
     foreach ($x in $lista) {
         if (-not (Test-Path -LiteralPath $x.Kalla)) {
-            Varning ("{0,-16} finns inte ({1})" -f $x.Mapp.Namn, $x.Kalla)
+            Varning ((T "{0,-16} does not exist ({1})" "{0,-16} finns inte ({1})") -f $x.Mapp.Namn, $x.Kalla)
             $x.Kalla = $null
             continue
         }
         $s = Measure-Mapp $x.Kalla
         $summa += $s.Byte; $moln += $s.MolnFiler; $molnByte += $s.MolnByte
         $od = if ($x.Kalla -match '\\OneDrive') { '  [OneDrive]' } else { '' }
-        $mo = if ($s.MolnFiler) { "  + $($s.MolnFiler) bara i molnet" } else { '' }
+        $mo = if ($s.MolnFiler) { (T "  + $($s.MolnFiler) only in the cloud" "  + $($s.MolnFiler) bara i molnet") } else { '' }
         Info ("{0,-16} {1,10}  {2,7} filer{3}  {4}{5}" -f $x.Mapp.Namn, (Format-Storlek $s.Byte), $s.Filer, $mo, $x.Kalla, $od)
     }
     if ($Cfg.Molnfiler -ne 'hoppa') { $summa += $molnByte }
     $ledigt = Get-Ledigt $Cfg.Malmapp
-    Info ("Totalt {0}, ledigt på {1}: {2}" -f (Format-Storlek $summa), [IO.Path]::GetPathRoot($Cfg.Malmapp), (Format-Storlek $ledigt))
+    Info ((T "Total {0}, free on {1}: {2}" "Totalt {0}, ledigt på {1}: {2}") -f (Format-Storlek $summa), [IO.Path]::GetPathRoot($Cfg.Malmapp), (Format-Storlek $ledigt))
     if ($moln) {
-        Varning ("{0} filer ({1}) finns bara i OneDrive-molnet (Files On-Demand)." -f $moln, (Format-Storlek $molnByte))
+        Varning ((T "{0} files ({1}) only exist in the OneDrive cloud (Files On-Demand)." "{0} filer ({1}) finns bara i OneDrive-molnet (Files On-Demand).") -f $moln, (Format-Storlek $molnByte))
         if ($Cfg.Molnfiler -eq 'hoppa') {
-            Info '     De hoppas över (/XA:O) – de finns redan i OneDrive och kommer tillbaka när användaren loggar in.'
-            Info '     Kontrollera att OneDrive är helt synkat innan datorn lämnar domänen.'
+            Info (T '     They are skipped (/XA:O): they are already in OneDrive and come back when the user signs in.' '     De hoppas över (/XA:O) – de finns redan i OneDrive och kommer tillbaka när användaren loggar in.')
+            Info (T '     Make sure OneDrive is fully synced before the computer leaves the domain.' '     Kontrollera att OneDrive är helt synkat innan datorn lämnar domänen.')
         } else {
-            Info '     robocopy försöker läsa dem. Det laddar ner dem om OneDrive körs för användaren, annars blir det fel.'
+            Info (T '     robocopy tries to read them. That downloads them if OneDrive is running for the user, otherwise it fails.' '     robocopy försöker läsa dem. Det laddar ner dem om OneDrive körs för användaren, annars blir det fel.')
         }
     }
     if ($ledigt -ge 0 -and $summa * 1.05 -gt $ledigt) {
-        Fel 'Det får inte plats i målmappen.'
-        if (-not (Fraga 'Kopiera ändå?' $false)) { return }
+        Fel (T 'It does not fit in the target folder.' 'Det får inte plats i målmappen.')
+        if (-not (Fraga (T 'Copy anyway?' 'Kopiera ändå?') $false)) { return }
     }
     if (-not $Torr) { New-Item -ItemType Directory -Path $Cfg.Malmapp -Force | Out-Null }
     $fel = 0
@@ -1007,16 +1075,16 @@ function Steg-kopiera {
         $lista | Where-Object { $_.Kalla } | ForEach-Object { [pscustomobject]@{ Mapp = $_.Mapp.Namn; Fran = $_.Kalla; Till = $_.Mal } } |
             Export-Csv -LiteralPath (Join-Path $Cfg.Malmapp 'Mappar.csv') -NoTypeInformation -Encoding UTF8
     }
-    if ($fel) { Varning "$fel mapp(ar) kopierades inte helt. Se $script:RoboLogg." } else { Ok 'Mapparna är kopierade.' }
+    if ($fel) { Varning (T "$fel folder(s) were not copied completely. See $script:RoboLogg." "$fel mapp(ar) kopierades inte helt. Se $script:RoboLogg.") } else { Ok (T 'The folders are copied.' 'Mapparna är kopierade.') }
 }
 
 function Steg-bitlocker_spara {
     $vol = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop
-    if ($vol.VolumeStatus -eq 'FullyDecrypted') { Info "BitLocker är inte på för $env:SystemDrive."; return }
+    if ($vol.VolumeStatus -eq 'FullyDecrypted') { Info (T "BitLocker is not on for $env:SystemDrive." "BitLocker är inte på för $env:SystemDrive."); return }
     $rp = @($vol.KeyProtector | Where-Object { $_.KeyProtectorType -eq 'RecoveryPassword' })
     if (-not $rp.Count) {
-        Varning 'Det finns ingen återställningsnyckel (RecoveryPassword).'
-        if (Fraga 'Skapa en återställningsnyckel nu?' $true) {
+        Varning (T 'There is no recovery key (RecoveryPassword).' 'Det finns ingen återställningsnyckel (RecoveryPassword).')
+        if (Fraga (T 'Create a recovery key now?' 'Skapa en återställningsnyckel nu?') $true) {
             Atgard 'Add-BitLockerKeyProtector -RecoveryPasswordProtector' {
                 Add-BitLockerKeyProtector -MountPoint $env:SystemDrive -RecoveryPasswordProtector -ErrorAction Stop | Out-Null
             }
@@ -1028,43 +1096,43 @@ function Steg-bitlocker_spara {
     Atgard "manage-bde -protectors -get $env:SystemDrive > $fil" {
         & manage-bde.exe -protectors -get $env:SystemDrive | Out-File -LiteralPath $fil -Encoding UTF8
     }
-    foreach ($p in $rp) { Info "Nyckel-ID $($p.KeyProtectorId)"; Info "   Nyckel: $($p.RecoveryPassword)" }
-    Varning 'Spara nyckeln utanför datorn också (dokumentation/ärende). Målmappen ligger på samma disk.'
+    foreach ($p in $rp) { Info (T "Key ID $($p.KeyProtectorId)" "Nyckel-ID $($p.KeyProtectorId)"); Info (T "   Key: $($p.RecoveryPassword)" "   Nyckel: $($p.RecoveryPassword)") }
+    Varning (T 'Save the key outside the computer too (documentation/ticket). The target folder is on the same disk.' 'Spara nyckeln utanför datorn också (dokumentation/ärende). Målmappen ligger på samma disk.')
     $a = Get-Anslutning
     foreach ($p in $rp) {
         if ($a.Entra) {
             # Till Entra ID: BackupToAAD-BitLockerKeyProtector (Backup-BitLockerKeyProtector skickar till AD DS).
             try {
-                Atgard "Säkerhetskopiera nyckeln till Entra ID ($($a.Tenant))" {
+                Atgard (T "Back up the key to Entra ID ($($a.Tenant))" "Säkerhetskopiera nyckeln till Entra ID ($($a.Tenant))") {
                     BackupToAAD-BitLockerKeyProtector -MountPoint $env:SystemDrive -KeyProtectorId $p.KeyProtectorId -ErrorAction Stop | Out-Null
                 }
-            } catch { Varning "Kunde inte spara nyckeln i Entra ID: $($_.Exception.Message)" }
+            } catch { Varning (T "Could not save the key in Entra ID: $($_.Exception.Message)" "Kunde inte spara nyckeln i Entra ID: $($_.Exception.Message)") }
         }
         if ($a.Doman) {
             try {
-                Atgard "Säkerhetskopiera nyckeln till AD ($($a.DomanNamn))" {
+                Atgard (T "Back up the key to AD ($($a.DomanNamn))" "Säkerhetskopiera nyckeln till AD ($($a.DomanNamn))") {
                     Backup-BitLockerKeyProtector -MountPoint $env:SystemDrive -KeyProtectorId $p.KeyProtectorId -ErrorAction Stop | Out-Null
                 }
-            } catch { Varning "Kunde inte spara nyckeln i AD: $($_.Exception.Message)" }
+            } catch { Varning (T "Could not save the key in AD: $($_.Exception.Message)" "Kunde inte spara nyckeln i AD: $($_.Exception.Message)") }
         }
     }
 }
 
 function Steg-bitlocker_av {
     $vol = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop
-    if ($vol.VolumeStatus -eq 'FullyDecrypted') { Info 'BitLocker är redan avstängt.'; return }
+    if ($vol.VolumeStatus -eq 'FullyDecrypted') { Info (T 'BitLocker is already off.' 'BitLocker är redan avstängt.'); return }
     if ($Cfg.BitLocker -eq 'stang-av') {
-        Varning 'Disable-BitLocker dekrypterar hela disken. Det kan ta lång tid, men datorn går att använda under tiden.'
-        if (-not (Fraga 'Stänga av BitLocker?' $true)) { return }
+        Varning (T 'Disable-BitLocker decrypts the whole disk. It can take a long time, but the computer can be used meanwhile.' 'Disable-BitLocker dekrypterar hela disken. Det kan ta lång tid, men datorn går att använda under tiden.')
+        if (-not (Fraga (T 'Turn off BitLocker?' 'Stänga av BitLocker?') $true)) { return }
         Atgard "Disable-BitLocker -MountPoint $env:SystemDrive" {
             Disable-BitLocker -MountPoint $env:SystemDrive -ErrorAction Stop | Out-Null
-            Ok 'Dekrypteringen har startat. Följ den med: manage-bde -status'
+            Ok (T 'Decryption has started. Follow it with: manage-bde -status' 'Dekrypteringen har startat. Följ den med: manage-bde -status')
         }
     } else {
-        if ($vol.ProtectionStatus -eq 'Off') { Info 'BitLocker är redan pausat.'; return }
-        Atgard "Suspend-BitLocker -MountPoint $env:SystemDrive -RebootCount 0 (pausat tills det slås på igen)" {
+        if ($vol.ProtectionStatus -eq 'Off') { Info (T 'BitLocker is already suspended.' 'BitLocker är redan pausat.'); return }
+        Atgard (T "Suspend-BitLocker -MountPoint $env:SystemDrive -RebootCount 0 (suspended until it is turned back on)" "Suspend-BitLocker -MountPoint $env:SystemDrive -RebootCount 0 (pausat tills det slås på igen)") {
             Suspend-BitLocker -MountPoint $env:SystemDrive -RebootCount 0 -ErrorAction Stop | Out-Null
-            Ok 'BitLocker är pausat. Slå på igen efter migreringen (görs i -Entra, eller: Resume-BitLocker).'
+            Ok (T 'BitLocker is suspended. Turn it back on after the migration (done in -Entra, or: Resume-BitLocker).' 'BitLocker är pausat. Slå på igen efter migreringen (görs i -Entra, eller: Resume-BitLocker).')
         }
     }
 }
@@ -1075,50 +1143,50 @@ function Steg-bokmarken {
     foreach ($b in $Cfg.Webblasare) {
         $w = $Webblasare[$b]
         $profiler = Get-WebbProfiler (Join-Path $Cfg.Profil $w.Data)
-        if (-not $profiler.Count) { Info "$($w.Namn): ingen profil hos $($Cfg.Anvandare)."; continue }
+        if (-not $profiler.Count) { Info (T "$($w.Namn): no profile for $($Cfg.Anvandare)." "$($w.Namn): ingen profil hos $($Cfg.Anvandare)."); continue }
         foreach ($p in $profiler) {
             $bm = Join-Path $p.FullName 'Bookmarks'
-            if (-not (Test-Path -LiteralPath $bm)) { Info "$($w.Namn) ($($p.Name)): inga bokmärken."; continue }
+            if (-not (Test-Path -LiteralPath $bm)) { Info (T "$($w.Namn) ($($p.Name)): no bookmarks." "$($w.Namn) ($($p.Name)): inga bokmärken."); continue }
             $namn = "$($w.Namn)-$($p.Name -replace '\s', '')"
             $antal++
-            Atgard "$($w.Namn) ($($p.Name)): kopiera Bookmarks och exportera till $namn-bokmarken.html" {
+            Atgard (T "$($w.Namn) ($($p.Name)): copy Bookmarks and export to $namn-bokmarken.html" "$($w.Namn) ($($p.Name)): kopiera Bookmarks och exportera till $namn-bokmarken.html") {
                 New-Item -ItemType Directory -Path $ut -Force | Out-Null
                 Copy-Item -LiteralPath $bm -Destination (Join-Path $ut "$namn-Bookmarks.json") -Force
                 try {
                     $n = ConvertTo-BokmarkHtml $bm (Join-Path $ut "$namn-bokmarken.html")
-                    Ok "$n bokmärken exporterade."
-                } catch { Varning "HTML-exporten misslyckades ($($_.Exception.Message)). JSON-filen är kopierad." }
+                    Ok (T "$n bookmarks exported." "$n bokmärken exporterade.")
+                } catch { Varning (T "The HTML export failed ($($_.Exception.Message)). The JSON file is copied." "HTML-exporten misslyckades ($($_.Exception.Message)). JSON-filen är kopierad.") }
             }
         }
     }
-    if (-not $antal) { Info 'Inga bokmärken hittades.' }
+    if (-not $antal) { Info (T 'No bookmarks found.' 'Inga bokmärken hittades.') }
 }
 
 function Steg-losenord {
     $ut = Join-Path $Cfg.Malmapp 'Webblasare'
     if (-not $Torr) { New-Item -ItemType Directory -Path $ut -Force | Out-Null }
     $sammaAnvandare = ($env:USERPROFILE -eq $Cfg.Profil)
-    Info 'Lösenord kan inte exporteras automatiskt. Du sparar dem som CSV själv:'
+    Info (T 'Passwords cannot be exported automatically. You save them as CSV yourself:' 'Lösenord kan inte exporteras automatiskt. Du sparar dem som CSV själv:')
     foreach ($b in $Cfg.Webblasare) {
         $w = $Webblasare[$b]
         $csv = Join-Path $ut "$($w.Namn)-losenord.csv"
         Info ''
         Info "$($w.Namn):"
-        Info "   1. Öppna $($w.Losen)"
-        Info '   2. Välj Exportera lösenord (… / Ladda ned fil) och bekräfta med Windows-inloggningen'
-        Info "   3. Spara som $csv"
+        Info (T "   1. Open $($w.Losen)" "   1. Öppna $($w.Losen)")
+        Info (T '   2. Choose Export passwords (… / Download file) and confirm with the Windows sign-in' '   2. Välj Exportera lösenord (… / Ladda ned fil) och bekräfta med Windows-inloggningen')
+        Info (T "   3. Save as $csv" "   3. Spara som $csv")
         if ($sammaAnvandare) {
-            Atgard "Öppna $($w.Losen)" { try { Start-Process $w.Exe $w.Losen } catch { Varning "Kunde inte starta $($w.Exe)." } }
+            Atgard (T "Open $($w.Losen)" "Öppna $($w.Losen)") { try { Start-Process $w.Exe $w.Losen } catch { Varning (T "Could not start $($w.Exe)." "Kunde inte starta $($w.Exe).") } }
         } else {
-            Varning "Skriptet körs som $env:USERNAME, inte som $($Cfg.Anvandare). Öppna $($w.Namn) i användarens session."
-            if (-not $Torr) { try { Set-Clipboard -Value $w.Losen; Info "   (adressen är kopierad)" } catch { } }
+            Varning (T "The script runs as $env:USERNAME, not as $($Cfg.Anvandare). Open $($w.Namn) in the user's session." "Skriptet körs som $env:USERNAME, inte som $($Cfg.Anvandare). Öppna $($w.Namn) i användarens session.")
+            if (-not $Torr) { try { Set-Clipboard -Value $w.Losen; Info (T "   (the address is copied)" "   (adressen är kopierad)") } catch { } }
         }
-        Vanta 'Tryck Enter när CSV-filen är sparad (eller för att hoppa över)'
+        Vanta (T 'Press Enter when the CSV file is saved (or to skip)' 'Tryck Enter när CSV-filen är sparad (eller för att hoppa över)')
         if (-not $Torr) {
-            if (Test-Path -LiteralPath $csv) { Ok "$csv finns." } else { Varning "Hittar inte $csv. Har den ett annat namn, är det också okej." }
+            if (Test-Path -LiteralPath $csv) { Ok (T "$csv exists." "$csv finns.") } else { Varning (T "Cannot find $csv. If it has another name, that is fine too." "Hittar inte $csv. Har den ett annat namn, är det också okej.") }
         }
     }
-    Varning 'CSV-filerna innehåller lösenord i klartext. Radera dem när de är importerade (-Aterlas frågar).'
+    Varning (T 'The CSV files contain passwords in plain text. Delete them once they are imported (-Aterlas asks).' 'CSV-filerna innehåller lösenord i klartext. Radera dem när de är importerade (-Aterlas frågar).')
 }
 
 function Steg-aktivitetsfalt {
@@ -1126,32 +1194,32 @@ function Steg-aktivitetsfalt {
     $fast = Join-Path $Cfg.Profil 'AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar'
     if (Test-Path -LiteralPath $fast) {
         $lnk = @(Get-ChildItem -LiteralPath $fast -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer })
-        Info "Fästa program ($($lnk.Count)): $(($lnk | ForEach-Object { $_.BaseName }) -join ', ')"
-        Atgard "Kopiera genvägarna till $ut\Genvagar" {
+        Info (T "Pinned apps ($($lnk.Count)): $(($lnk | ForEach-Object { $_.BaseName }) -join ', ')" "Fästa program ($($lnk.Count)): $(($lnk | ForEach-Object { $_.BaseName }) -join ', ')")
+        Atgard (T "Copy the shortcuts to $ut\Genvagar" "Kopiera genvägarna till $ut\Genvagar") {
             New-Item -ItemType Directory -Path (Join-Path $ut 'Genvagar') -Force | Out-Null
             Copy-Item -Path (Join-Path $fast '*') -Destination (Join-Path $ut 'Genvagar') -Recurse -Force
             $lnk | ForEach-Object { $_.BaseName } | Set-Content -LiteralPath (Join-Path $ut 'Fasta-program.txt') -Encoding UTF8
         }
     } else {
-        Info 'Hittar inga fästa genvägar.'
+        Info (T 'No pinned shortcuts found.' 'Hittar inga fästa genvägar.')
     }
     $hive = Open-AnvandarHive
     if ($hive) {
         $nyckel = "$hive\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband"
-        Atgard "Exportera registret Taskband till $ut\Taskband.reg" {
+        Atgard (T "Export the Taskband registry key to $ut\Taskband.reg" "Exportera registret Taskband till $ut\Taskband.reg") {
             New-Item -ItemType Directory -Path $ut -Force | Out-Null
             & reg.exe export $nyckel (Join-Path $ut 'Taskband.reg') /y 2>$null | Out-Null
-            if ($LASTEXITCODE -eq 0) { Ok 'Taskband.reg sparad (som referens, importera inte rakt av).' } else { Varning 'Taskband-nyckeln saknas.' }
+            if ($LASTEXITCODE -eq 0) { Ok (T 'Taskband.reg saved (for reference, do not import it as is).' 'Taskband.reg sparad (som referens, importera inte rakt av).') } else { Varning (T 'The Taskband key is missing.' 'Taskband-nyckeln saknas.') }
         }
     }
     Close-AnvandarHive
-    Info 'Windows 11 sparar inte hela aktivitetsfältet där. Skärmdumpen är facit.'
+    Info (T 'Windows 11 does not keep the whole taskbar there. The screenshot is the reference.' 'Windows 11 sparar inte hela aktivitetsfältet där. Skärmdumpen är facit.')
 }
 
 function Steg-skarmdump {
-    if (-not (Fraga 'Ta en skärmdump av skärmen nu (visa aktivitetsfältet)?' $true)) { return }
-    Atgard "Skärmdump till $($Cfg.Malmapp)" {
-        Info 'Skärmdumpen tas om 5 sekunder …'
+    if (-not (Fraga (T 'Take a screenshot now (show the taskbar)?' 'Ta en skärmdump av skärmen nu (visa aktivitetsfältet)?') $true)) { return }
+    Atgard (T "Screenshot to $($Cfg.Malmapp)" "Skärmdump till $($Cfg.Malmapp)") {
+        Info (T 'The screenshot is taken in 5 seconds …' 'Skärmdumpen tas om 5 sekunder …')
         Start-Sleep -Seconds 5
         try {
             Add-Type -Namespace Muppa -Name Dpi -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();' -ErrorAction SilentlyContinue
@@ -1166,7 +1234,7 @@ function Steg-skarmdump {
         $fil = Join-Path $Cfg.Malmapp ('Skarmdump-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.png')
         $bild.Save($fil, [System.Drawing.Imaging.ImageFormat]::Png)
         $g.Dispose(); $bild.Dispose()
-        Ok "Sparad: $fil"
+        Ok (T "Saved: $fil" "Sparad: $fil")
     }
 }
 
@@ -1174,32 +1242,32 @@ function Steg-admin {
     $namn = $Cfg.AdminNamn
     $finns = Get-LocalUser -Name $namn -ErrorAction SilentlyContinue
     if ($finns) {
-        Info "Kontot $namn finns redan$(if (-not $finns.Enabled) { ' (inaktiverat)' })."
-        $nyttLosen = Fraga "Sätta nytt lösenord för $namn?" $false
+        Info (T "The account $namn already exists$(if (-not $finns.Enabled) { ' (disabled)' })." "Kontot $namn finns redan$(if (-not $finns.Enabled) { ' (inaktiverat)' }).")
+        $nyttLosen = Fraga (T "Set a new password for $namn?" "Sätta nytt lösenord för $namn?") $false
     } else {
         $nyttLosen = $true
     }
     if ($Torr) {
-        Atgard "$(if ($finns) { 'Uppdatera' } else { 'Skapa' }) lokalt konto $namn och lägg det i Administratörer" { }
+        Atgard (T "$(if ($finns) { 'Update' } else { 'Create' }) local account $namn and add it to Administrators" "$(if ($finns) { 'Uppdatera' } else { 'Skapa' }) lokalt konto $namn och lägg det i Administratörer") { }
         return
     }
     if ($nyttLosen) {
         while ($true) {
             # Lösenordet frågas här och sparas ingenstans – det står aldrig i skriptet.
-            $p1 = Read-Host "   Lösenord för $namn" -AsSecureString
-            $p2 = Read-Host '   Samma lösenord igen' -AsSecureString
-            if (-not (Test-SammaLosen $p1 $p2)) { Varning 'Lösenorden var tomma eller olika. Försök igen.'; continue }
+            $p1 = Read-Host (T "   Password for $namn" "   Lösenord för $namn") -AsSecureString
+            $p2 = Read-Host (T '   The same password again' '   Samma lösenord igen') -AsSecureString
+            if (-not (Test-SammaLosen $p1 $p2)) { Varning (T 'The passwords were empty or different. Try again.' 'Lösenorden var tomma eller olika. Försök igen.'); continue }
             try {
                 if ($finns) {
                     Set-LocalUser -Name $namn -Password $p1 -ErrorAction Stop
                 } else {
-                    New-LocalUser -Name $namn -Password $p1 -FullName $namn -Description 'Lokalt admin-konto (migrering)' `
+                    New-LocalUser -Name $namn -Password $p1 -FullName $namn -Description (T 'Local admin account (migration)' 'Lokalt admin-konto (migrering)') `
                         -PasswordNeverExpires -AccountNeverExpires -ErrorAction Stop | Out-Null
                 }
                 break
             } catch {
                 Fel $_.Exception.Message
-                if (-not (Fraga 'Försöka med ett annat lösenord?' $true)) { return }
+                if (-not (Fraga (T 'Try another password?' 'Försöka med ett annat lösenord?') $true)) { return }
             }
         }
     }
@@ -1207,43 +1275,43 @@ function Steg-admin {
     try {
         Add-LocalGroupMember -SID 'S-1-5-32-544' -Member $namn -ErrorAction Stop
     } catch {
-        if ($_.Exception.Message -notmatch 'already|redan') { Fel "Kunde inte lägga till i Administratörer: $($_.Exception.Message)"; return }
+        if ($_.Exception.Message -notmatch 'already|redan') { Fel (T "Could not add to Administrators: $($_.Exception.Message)" "Kunde inte lägga till i Administratörer: $($_.Exception.Message)"); return }
     }
-    Ok "$namn är lokal administratör. Logga in som .\$namn."
+    Ok (T "$namn is a local administrator. Sign in as .\$namn." "$namn är lokal administratör. Logga in som .\$namn.")
 }
 
 # ═══════════════════════════════ steg: domän, Entra, återläsning ═══════════════════════════════
 function Steg-doman {
     $a = Get-Anslutning
-    if (-not $a.Doman) { Ok 'Datorn är inte med i någon domän.'; return }
-    Info "Datorn $($a.Dator) är med i domänen $($a.DomanNamn)."
+    if (-not $a.Doman) { Ok (T 'The computer is not in a domain.' 'Datorn är inte med i någon domän.'); return }
+    Info (T "The computer $($a.Dator) is in the domain $($a.DomanNamn)." "Datorn $($a.Dator) är med i domänen $($a.DomanNamn).")
     $admins = Get-LokalaAdmins
     if ($Cfg.AdminNamn -and $admins -notcontains $Cfg.AdminNamn) {
-        Varning "Det lokala admin-kontot $($Cfg.AdminNamn) finns inte, eller är inte administratör."
+        Varning (T "The local admin account $($Cfg.AdminNamn) does not exist, or is not an administrator." "Det lokala admin-kontot $($Cfg.AdminNamn) finns inte, eller är inte administratör.")
     }
-    Info "Lokala admins: $(if ($admins) { $admins -join ', ' } else { 'INGA' })"
-    if ($env:USERDOMAIN -ne $env:COMPUTERNAME) { Varning "Du är inloggad med domänkontot $env:USERDOMAIN\$env:USERNAME." }
-    Varning 'Efter omstarten kan inga domänkonton logga in. Du behöver lösenordet till ett lokalt admin-konto.'
+    Info (T "Local admins: $(if ($admins) { $admins -join ', ' } else { 'NONE' })" "Lokala admins: $(if ($admins) { $admins -join ', ' } else { 'INGA' })")
+    if ($env:USERDOMAIN -ne $env:COMPUTERNAME) { Varning (T "You are signed in with the domain account $env:USERDOMAIN\$env:USERNAME." "Du är inloggad med domänkontot $env:USERDOMAIN\$env:USERNAME.") }
+    Varning (T 'After the restart no domain accounts can sign in. You need the password of a local admin account.' 'Efter omstarten kan inga domänkonton logga in. Du behöver lösenordet till ett lokalt admin-konto.')
     if ($Torr) {
-        Atgard 'Remove-Computer -WorkgroupName WORKGROUP, sedan omstart' { }
+        Atgard (T 'Remove-Computer -WorkgroupName WORKGROUP, then restart' 'Remove-Computer -WorkgroupName WORKGROUP, sedan omstart') { }
         return
     }
-    $svar = Read-Host "   Skriv LÄMNA för att ta bort datorn ur $($a.DomanNamn)"
-    if (@('lämna', 'lamna') -notcontains $svar.Trim().ToLower()) { Info 'Avbrutet. Datorn är kvar i domänen.'; return }
+    $svar = Read-Host (T "   Type LEAVE to remove the computer from $($a.DomanNamn)" "   Skriv LÄMNA för att ta bort datorn ur $($a.DomanNamn)")
+    if (@('lämna', 'lamna', 'leave') -notcontains $svar.Trim().ToLower()) { Info (T 'Cancelled. The computer stays in the domain.' 'Avbrutet. Datorn är kvar i domänen.'); return }
     $p = @{ WorkgroupName = 'WORKGROUP'; Force = $true; ErrorAction = 'Stop' }
-    if (Fraga 'Ange ett domänkonto som får ta bort datorkontot i AD? (nej = nuvarande konto)' $false) {
-        $p.UnjoinDomainCredential = Get-Credential -Message 'Domänkonto (DOMÄN\namn) som får ta bort datorn'
+    if (Fraga (T 'Use a domain account that may remove the computer account in AD? (no = current account)' 'Ange ett domänkonto som får ta bort datorkontot i AD? (nej = nuvarande konto)') $false) {
+        $p.UnjoinDomainCredential = Get-Credential -Message (T 'Domain account (DOMAIN\name) that may remove the computer' 'Domänkonto (DOMÄN\namn) som får ta bort datorn')
     }
     try {
         Remove-Computer @p
     } catch {
-        Fel "Remove-Computer misslyckades: $($_.Exception.Message)"
-        Info 'Når datorn ingen domänkontrollant? Prova i stället: Systemegenskaper (sysdm.cpl) → Ändra → Arbetsgrupp.'
+        Fel (T "Remove-Computer failed: $($_.Exception.Message)" "Remove-Computer misslyckades: $($_.Exception.Message)")
+        Info (T 'Can the computer not reach a domain controller? Try instead: System Properties (sysdm.cpl) → Change → Workgroup.' 'Når datorn ingen domänkontrollant? Prova i stället: Systemegenskaper (sysdm.cpl) → Ändra → Arbetsgrupp.')
         return
     }
-    Ok 'Datorn har lämnat domänen. Den måste startas om.'
-    Info "Efter omstarten: logga in som $(AdminVem) och kör: .\$SkriptNamn -Entra"
-    if (Fraga 'Starta om nu?' $true) {
+    Ok (T 'The computer has left the domain. It must be restarted.' 'Datorn har lämnat domänen. Den måste startas om.')
+    Info (T "After the restart: sign in as $(AdminVem) and run: .\$SkriptNamn -Entra" "Efter omstarten: logga in som $(AdminVem) och kör: .\$SkriptNamn -Entra")
+    if (Fraga (T 'Restart now?' 'Starta om nu?') $true) {
         try { Stop-Transcript | Out-Null } catch { }
         Restart-Computer -Force
     }
@@ -1252,22 +1320,22 @@ function Steg-doman {
 function Steg-entra {
     $a = Get-Anslutning
     if ($a.Entra) {
-        Ok "Datorn är redan ansluten till Entra ID ($($a.Tenant))."
+        Ok (T "The computer is already joined to Entra ID ($($a.Tenant))." "Datorn är redan ansluten till Entra ID ($($a.Tenant)).")
     } else {
-        if ($a.Doman) { Varning "Datorn är fortfarande med i domänen $($a.DomanNamn). Kör -Doman först." }
-        Info 'Anslutningen till Entra ID görs i Inställningar:'
-        Info '   1. Konton → Åtkomst till arbete eller skola → Anslut'
-        Info '   2. Klicka på länken längst ner: "Anslut den här enheten till Microsoft Entra ID"'
-        Info '      (inte e-postfältet – det registrerar bara ett konto)'
-        Info "   3. Logga in med användarens konto$(if ($Cfg.Upn) { ": $($Cfg.Upn)" })"
-        Info '   4. Kontrollera organisationen, klicka på Anslut och sedan Klar'
-        Atgard 'Öppna ms-settings:workplace' { Start-Process 'ms-settings:workplace' }
+        if ($a.Doman) { Varning (T "The computer is still in the domain $($a.DomanNamn). Run -Doman first." "Datorn är fortfarande med i domänen $($a.DomanNamn). Kör -Doman först.") }
+        Info (T 'The Entra ID join is done in Settings:' 'Anslutningen till Entra ID görs i Inställningar:')
+        Info (T '   1. Accounts → Access work or school → Connect' '   1. Konton → Åtkomst till arbete eller skola → Anslut')
+        Info (T '   2. Click the link at the bottom: "Join this device to Microsoft Entra ID"' '   2. Klicka på länken längst ner: "Anslut den här enheten till Microsoft Entra ID"')
+        Info (T '      (not the email field, which only registers an account)' '      (inte e-postfältet – det registrerar bara ett konto)')
+        Info (T "   3. Sign in with the user's account$(if ($Cfg.Upn) { ": $($Cfg.Upn)" })" "   3. Logga in med användarens konto$(if ($Cfg.Upn) { ": $($Cfg.Upn)" })")
+        Info (T '   4. Check the organisation, click Join and then Done' '   4. Kontrollera organisationen, klicka på Anslut och sedan Klar')
+        Atgard (T 'Open ms-settings:workplace' 'Öppna ms-settings:workplace') { Start-Process 'ms-settings:workplace' }
         while (-not $Torr) {
-            Vanta 'Tryck Enter när anslutningen är klar'
+            Vanta (T 'Press Enter when the join is done' 'Tryck Enter när anslutningen är klar')
             $a = Get-Anslutning
-            if ($a.Entra) { Ok "Ansluten till Entra ID ($($a.Tenant))."; break }
-            Varning 'dsregcmd /status visar inte AzureAdJoined : YES än.'
-            if (-not (Fraga 'Kontrollera igen?' $true)) { break }
+            if ($a.Entra) { Ok (T "Joined to Entra ID ($($a.Tenant))." "Ansluten till Entra ID ($($a.Tenant))."); break }
+            Varning (T 'dsregcmd /status does not show AzureAdJoined : YES yet.' 'dsregcmd /status visar inte AzureAdJoined : YES än.')
+            if (-not (Fraga (T 'Check again?' 'Kontrollera igen?') $true)) { break }
         }
     }
     try { $vol = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop } catch { $vol = $null }
@@ -1275,37 +1343,37 @@ function Steg-entra {
         if ($a.Entra -and $Steg.bitlocker_spara) {
             foreach ($p in @($vol.KeyProtector | Where-Object { $_.KeyProtectorType -eq 'RecoveryPassword' })) {
                 try {
-                    Atgard 'Säkerhetskopiera BitLocker-nyckeln till Entra ID' {
+                    Atgard (T 'Back up the BitLocker key to Entra ID' 'Säkerhetskopiera BitLocker-nyckeln till Entra ID') {
                         BackupToAAD-BitLockerKeyProtector -MountPoint $env:SystemDrive -KeyProtectorId $p.KeyProtectorId -ErrorAction Stop | Out-Null
-                        Ok 'Nyckeln finns nu på enheten i Entra ID.'
+                        Ok (T 'The key is now on the device in Entra ID.' 'Nyckeln finns nu på enheten i Entra ID.')
                     }
-                } catch { Varning "Kunde inte spara nyckeln i Entra ID: $($_.Exception.Message)" }
+                } catch { Varning (T "Could not save the key in Entra ID: $($_.Exception.Message)" "Kunde inte spara nyckeln i Entra ID: $($_.Exception.Message)") }
             }
         }
         if ($vol.ProtectionStatus -eq 'Off' -and $vol.VolumeStatus -eq 'FullyEncrypted') {
-            if (Fraga 'BitLocker är pausat. Slå på det igen (Resume-BitLocker)?' $true) {
-                Atgard 'Resume-BitLocker' { Resume-BitLocker -MountPoint $env:SystemDrive -ErrorAction Stop | Out-Null; Ok 'BitLocker är på igen.' }
+            if (Fraga (T 'BitLocker is suspended. Turn it back on (Resume-BitLocker)?' 'BitLocker är pausat. Slå på det igen (Resume-BitLocker)?') $true) {
+                Atgard 'Resume-BitLocker' { Resume-BitLocker -MountPoint $env:SystemDrive -ErrorAction Stop | Out-Null; Ok (T 'BitLocker is on again.' 'BitLocker är på igen.') }
             }
         }
     }
     Info ''
-    Info 'Starta om och logga in som användaren (Annan användare → e-postadressen).'
-    Info 'Windows Hello: hoppa över vid första inloggningen.'
-    Info "Kör sedan som användaren (inte som administratör): .\$SkriptNamn -Aterlas"
+    Info (T 'Restart and sign in as the user (Other user → the email address).' 'Starta om och logga in som användaren (Annan användare → e-postadressen).')
+    Info (T 'Windows Hello: skip it at the first sign-in.' 'Windows Hello: hoppa över vid första inloggningen.')
+    Info (T "Then run as the user (not as administrator): .\$SkriptNamn -Aterlas" "Kör sedan som användaren (inte som administratör): .\$SkriptNamn -Aterlas")
 }
 
 function Steg-aterlas {
     if ($env:USERPROFILE -eq $Cfg.Profil) {
-        Varning "Du är inloggad med den gamla profilen ($($Cfg.Profil)). Återläsningen ska göras i den nya profilen."
-        if (-not (Fraga 'Fortsätta ändå?' $false)) { return }
+        Varning (T "You are signed in with the old profile ($($Cfg.Profil)). The restore must be done in the new profile." "Du är inloggad med den gamla profilen ($($Cfg.Profil)). Återläsningen ska göras i den nya profilen.")
+        if (-not (Fraga (T 'Continue anyway?' 'Fortsätta ändå?') $false)) { return }
     }
-    if (Test-Admin) { Varning "Skriptet körs som administratör. Kopiorna hamnar i profilen för $env:USERNAME ($env:USERPROFILE)." }
-    Info "Ny profil: $env:USERPROFILE"
+    if (Test-Admin) { Varning (T "The script runs as administrator. The copies end up in the profile of $env:USERNAME ($env:USERPROFILE)." "Skriptet körs som administratör. Kopiorna hamnar i profilen för $env:USERNAME ($env:USERPROFILE).") }
+    Info (T "New profile: $env:USERPROFILE" "Ny profil: $env:USERPROFILE")
     if ($Steg.kopiera -and $Mappar.Count) {
-        if (Get-Process -Name 'Microsoft.Notes' -ErrorAction SilentlyContinue) { Varning 'Stäng Sticky Notes innan återläsningen.' }
+        if (Get-Process -Name 'Microsoft.Notes' -ErrorAction SilentlyContinue) { Varning (T 'Close Sticky Notes before the restore.' 'Stäng Sticky Notes innan återläsningen.') }
         foreach ($m in $Mappar) {
             $fran = Join-Path $Cfg.Malmapp $m.Mal
-            if (-not (Test-Path -LiteralPath $fran)) { Info "$($m.Namn): ingen kopia i $fran."; continue }
+            if (-not (Test-Path -LiteralPath $fran)) { Info (T "$($m.Namn): no copy in $fran." "$($m.Namn): ingen kopia i $fran."); continue }
             $till = Resolve-Mapp $m 'HKEY_CURRENT_USER' $env:USERPROFILE
             Info ''
             Info "$($m.Namn): $fran -> $till"
@@ -1315,95 +1383,95 @@ function Steg-aterlas {
 
     Rubrik 'OneDrive'
     $od = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\OneDrive\Accounts\Business1' -ErrorAction SilentlyContinue
-    if ($od -and $od.UserEmail) { Ok "OneDrive är inloggat som $($od.UserEmail)." } else { Varning 'OneDrive (jobb/skola) är inte inloggat än.' }
-    if (Get-Process -Name 'OneDrive' -ErrorAction SilentlyContinue) { Ok 'OneDrive körs.' } else {
-        Varning 'OneDrive körs inte.'
+    if ($od -and $od.UserEmail) { Ok (T "OneDrive is signed in as $($od.UserEmail)." "OneDrive är inloggat som $($od.UserEmail).") } else { Varning (T 'OneDrive (work/school) is not signed in yet.' 'OneDrive (jobb/skola) är inte inloggat än.') }
+    if (Get-Process -Name 'OneDrive' -ErrorAction SilentlyContinue) { Ok (T 'OneDrive is running.' 'OneDrive körs.') } else {
+        Varning (T 'OneDrive is not running.' 'OneDrive körs inte.')
         $exe = @("$env:LOCALAPPDATA\Microsoft\OneDrive\OneDrive.exe", "$env:ProgramFiles\Microsoft OneDrive\OneDrive.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if ($exe) { Atgard 'Starta OneDrive' { Start-Process $exe } }
+        if ($exe) { Atgard (T 'Start OneDrive' 'Starta OneDrive') { Start-Process $exe } }
     }
     foreach ($n in 'Desktop', 'Personal', 'My Pictures') {
         $v = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders' -ErrorAction SilentlyContinue).$n
         $v = [Environment]::ExpandEnvironmentVariables([string]$v)
-        $t = if ($v -match '\\OneDrive') { 'säkerhetskopieras av OneDrive' } else { 'inte i OneDrive' }
+        $t = if ($v -match '\\OneDrive') { (T 'backed up by OneDrive' 'säkerhetskopieras av OneDrive') } else { (T 'not in OneDrive' 'inte i OneDrive') }
         Info ("{0,-12} {1}  ({2})" -f $n, $v, $t)
     }
 
     $wmapp = Join-Path $Cfg.Malmapp 'Webblasare'
     if ($Cfg.Webblasare.Count -and (Test-Path -LiteralPath $wmapp)) {
-        Rubrik 'Webbläsare'
+        Rubrik (T 'Browsers' 'Webbläsare')
         Get-ChildItem -LiteralPath $wmapp -File | ForEach-Object { Info $_.Name }
         foreach ($b in $Cfg.Webblasare) {
             $w = $Webblasare[$b]
-            Info "$($w.Namn): logga in, importera bokmärken (*-bokmarken.html) via $($w.Import)"
-            Info "         och lösenord (CSV) via $($w.Losen) → Importera."
-            Atgard "Öppna $($w.Import)" { try { Start-Process $w.Exe $w.Import } catch { Varning "Kunde inte starta $($w.Exe)." } }
+            Info (T "$($w.Namn): sign in, import bookmarks (*-bokmarken.html) via $($w.Import)" "$($w.Namn): logga in, importera bokmärken (*-bokmarken.html) via $($w.Import)")
+            Info (T "         and passwords (CSV) via $($w.Losen) → Import." "         och lösenord (CSV) via $($w.Losen) → Importera.")
+            Atgard (T "Open $($w.Import)" "Öppna $($w.Import)") { try { Start-Process $w.Exe $w.Import } catch { Varning (T "Could not start $($w.Exe)." "Kunde inte starta $($w.Exe).") } }
         }
-        Atgard "Öppna $wmapp" { Invoke-Item -LiteralPath $wmapp }
-        Vanta 'Tryck Enter när bokmärken och lösenord är importerade'
+        Atgard (T "Open $wmapp" "Öppna $wmapp") { Invoke-Item -LiteralPath $wmapp }
+        Vanta (T 'Press Enter when bookmarks and passwords are imported' 'Tryck Enter när bokmärken och lösenord är importerade')
         $csv = @(Get-ChildItem -LiteralPath $wmapp -Filter '*.csv' -File -ErrorAction SilentlyContinue)
-        if ($csv.Count -and (Fraga "Radera $($csv.Count) CSV-fil(er) med lösenord nu?" $false)) {
-            Atgard 'Radera lösenordsfilerna' { $csv | Remove-Item -Force; Ok 'Raderade.' }
+        if ($csv.Count -and (Fraga (T "Delete $($csv.Count) CSV file(s) with passwords now?" "Radera $($csv.Count) CSV-fil(er) med lösenord nu?") $false)) {
+            Atgard (T 'Delete the password files' 'Radera lösenordsfilerna') { $csv | Remove-Item -Force; Ok 'Raderade.' }
         }
     }
 
     $amapp = Join-Path $Cfg.Malmapp 'Aktivitetsfalt'
     $bild = Get-ChildItem -LiteralPath $Cfg.Malmapp -Filter 'Skarmdump-*.png' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
     if ($bild -or (Test-Path -LiteralPath $amapp)) {
-        Rubrik 'Aktivitetsfältet'
-        Info 'Fäst programmen enligt skärmdumpen (högerklicka → Fäst i aktivitetsfältet).'
-        if ($bild) { Atgard "Öppna $($bild.Name)" { Invoke-Item -LiteralPath $bild.FullName } }
+        Rubrik (T 'Taskbar' 'Aktivitetsfältet')
+        Info (T 'Pin the apps as in the screenshot (right-click → Pin to taskbar).' 'Fäst programmen enligt skärmdumpen (högerklicka → Fäst i aktivitetsfältet).')
+        if ($bild) { Atgard (T "Open $($bild.Name)" "Öppna $($bild.Name)") { Invoke-Item -LiteralPath $bild.FullName } }
         if (Test-Path -LiteralPath (Join-Path $amapp 'Fasta-program.txt')) {
-            Info "Tidigare fästa: $((Get-Content -LiteralPath (Join-Path $amapp 'Fasta-program.txt')) -join ', ')"
+            Info (T "Previously pinned: $((Get-Content -LiteralPath (Join-Path $amapp 'Fasta-program.txt')) -join ', ')" "Tidigare fästa: $((Get-Content -LiteralPath (Join-Path $amapp 'Fasta-program.txt')) -join ', ')")
         }
     }
 
-    Rubrik 'Outlook och Teams'
-    if (Fraga 'Starta Outlook (skapar profilen)?' $true) {
-        Atgard 'Starta Outlook' { try { Start-Process 'outlook.exe' } catch { Varning 'Hittar inte Outlook.' } }
+    Rubrik (T 'Outlook and Teams' 'Outlook och Teams')
+    if (Fraga (T 'Start Outlook (creates the profile)?' 'Starta Outlook (skapar profilen)?') $true) {
+        Atgard (T 'Start Outlook' 'Starta Outlook') { try { Start-Process 'outlook.exe' } catch { Varning (T 'Cannot find Outlook.' 'Hittar inte Outlook.') } }
     }
-    if (Fraga 'Starta Teams?' $true) {
-        Atgard 'Starta Teams' {
-            try { Start-Process 'ms-teams.exe' -ErrorAction Stop } catch { try { Start-Process 'msteams:' } catch { Varning 'Hittar inte Teams.' } }
+    if (Fraga (T 'Start Teams?' 'Starta Teams?') $true) {
+        Atgard (T 'Start Teams' 'Starta Teams') {
+            try { Start-Process 'ms-teams.exe' -ErrorAction Stop } catch { try { Start-Process 'msteams:' } catch { Varning (T 'Cannot find Teams.' 'Hittar inte Teams.') } }
         }
     }
-    Info 'Kontrollera att Teams och Outlook använder rätt konto, och synka Teams-/SharePoint-bibliotek (Synkronisera i webben).'
+    Info (T 'Check that Teams and Outlook use the right account, and sync Teams/SharePoint libraries (Sync in the browser).' 'Kontrollera att Teams och Outlook använder rätt konto, och synka Teams-/SharePoint-bibliotek (Synkronisera i webben).')
 }
 
 # ═══════════════════════════════ start ═══════════════════════════════
 $StegTitel = @{
-    info = 'Datorinformation'; kopiera = 'Kopiera mappar'; bitlocker_spara = 'Spara BitLocker-nyckeln'
-    bitlocker_av = $(if ($Cfg.BitLocker -eq 'stang-av') { 'Stäng av BitLocker' } else { 'Pausa BitLocker' })
-    bokmarken = 'Bokmärken'; losenord = 'Lösenord (manuell export)'; aktivitetsfalt = 'Aktivitetsfältet'
-    skarmdump = 'Skärmdump'; admin = "Lokalt admin-konto ($($Cfg.AdminNamn))"
-    doman = 'Lämna domänen'; entra = 'Anslut till Entra ID'; aterlas = 'Återläsning'
+    info = (T 'Computer information' 'Datorinformation'); kopiera = (T 'Copy folders' 'Kopiera mappar'); bitlocker_spara = (T 'Save the BitLocker key' 'Spara BitLocker-nyckeln')
+    bitlocker_av = $(if ($Cfg.BitLocker -eq 'stang-av') { (T 'Turn off BitLocker' 'Stäng av BitLocker') } else { (T 'Suspend BitLocker' 'Pausa BitLocker') })
+    bokmarken = (T 'Bookmarks' 'Bokmärken'); losenord = (T 'Passwords (manual export)' 'Lösenord (manuell export)'); aktivitetsfalt = (T 'Taskbar' 'Aktivitetsfältet')
+    skarmdump = (T 'Screenshot' 'Skärmdump'); admin = (T "Local admin account ($($Cfg.AdminNamn))" "Lokalt admin-konto ($($Cfg.AdminNamn))")
+    doman = (T 'Leave the domain' 'Lämna domänen'); entra = (T 'Join Entra ID' 'Anslut till Entra ID'); aterlas = (T 'Restore' 'Återläsning')
 }
 
 function Kor-Steg([string[]]$Lista) {
     $valda = @($Lista | Where-Object { $Steg[$_] })
-    if (-not $valda.Count) { Info 'Inga steg är valda för den här fasen.'; return }
+    if (-not $valda.Count) { Info (T 'No steps are selected for this phase.' 'Inga steg är valda för den här fasen.'); return }
     $n = 0
     foreach ($id in $valda) {
         $n++
-        Rubrik ('Steg {0}/{1}: {2}' -f $n, $valda.Count, $StegTitel[$id])
+        Rubrik ((T 'Step {0}/{1}: {2}' 'Steg {0}/{1}: {2}') -f $n, $valda.Count, $StegTitel[$id])
         try {
             & ('Steg-' + $id)
         } catch {
-            Fel ('{0} misslyckades: {1}' -f $StegTitel[$id], $_.Exception.Message)
-            if (-not (Fraga 'Fortsätta med nästa steg?' $true)) { throw 'Avbrutet.' }
+            Fel ((T '{0} failed: {1}' '{0} misslyckades: {1}') -f $StegTitel[$id], $_.Exception.Message)
+            if (-not (Fraga (T 'Continue with the next step?' 'Fortsätta med nästa steg?') $true)) { throw (T 'Cancelled.' 'Avbrutet.') }
         }
     }
 }
 
 if ($PSVersionTable.PSVersion.Major -gt 5) {
-    Write-Host '  Tips: skriptet är gjort för Windows PowerShell 5.1 (powershell.exe). BitLocker- och LocalAccounts-cmdletarna finns inte alltid i pwsh.' -ForegroundColor Yellow
+    Write-Host (T '  Tip: the script is made for Windows PowerShell 5.1 (powershell.exe). The BitLocker and LocalAccounts cmdlets are not always in pwsh.' '  Tips: skriptet är gjort för Windows PowerShell 5.1 (powershell.exe). BitLocker- och LocalAccounts-cmdletarna finns inte alltid i pwsh.') -ForegroundColor Yellow
 }
-if ($env:OS -ne 'Windows_NT') { Write-Host '  Skriptet körs bara på Windows.' -ForegroundColor Red; exit 1 }
+if ($env:OS -ne 'Windows_NT') { Write-Host (T '  The script only runs on Windows.' '  Skriptet körs bara på Windows.') -ForegroundColor Red; exit 1 }
 if ($Fas -ne 'aterlas' -and -not (Test-Admin)) {
-    Write-Host '  Kör skriptet som administratör (högerklicka PowerShell → Kör som administratör).' -ForegroundColor Red
+    Write-Host (T '  Run the script as administrator (right-click PowerShell → Run as administrator).' '  Kör skriptet som administratör (högerklicka PowerShell → Kör som administratör).') -ForegroundColor Red
     exit 1
 }
 if ($Fas -eq 'aterlas' -and -not (Test-Path -LiteralPath $Cfg.Malmapp)) {
-    Write-Host "  Hittar inte målmappen $($Cfg.Malmapp). Ändra Malmapp högst upp i skriptet." -ForegroundColor Red
+    Write-Host (T "  Cannot find the target folder $($Cfg.Malmapp). Change Malmapp at the top of the script." "  Hittar inte målmappen $($Cfg.Malmapp). Ändra Malmapp högst upp i skriptet.") -ForegroundColor Red
     exit 1
 }
 
@@ -1413,13 +1481,13 @@ try { New-Item -ItemType Directory -Path $loggMapp -Force -WhatIf:$false -ErrorA
 $script:RoboLogg = Join-Path $loggMapp 'robocopy.log'
 $logg = Join-Path $loggMapp ('Muppa-{0}-{1}.log' -f $Fas, (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $transkript = $false
-try { Start-Transcript -Path $logg -Append -WhatIf:$false | Out-Null; $transkript = $true } catch { Write-Host "  Kunde inte starta loggen: $($_.Exception.Message)" -ForegroundColor Yellow }
+try { Start-Transcript -Path $logg -Append -WhatIf:$false | Out-Null; $transkript = $true } catch { Write-Host (T "  Could not start the log: $($_.Exception.Message)" "  Kunde inte starta loggen: $($_.Exception.Message)") -ForegroundColor Yellow }
 
-$fasNamn = @{ forbered = 'förbered'; doman = 'lämna domänen'; entra = 'anslut till Entra ID'; aterlas = 'återläsning' }[$Fas]
+$fasNamn = @{ forbered = (T 'prepare' 'förbered'); doman = (T 'leave the domain' 'lämna domänen'); entra = (T 'join Entra ID' 'anslut till Entra ID'); aterlas = (T 'restore' 'återläsning') }[$Fas]
 Write-Host ''
-Write-Host "  Muppa · migrering av $($Cfg.Anvandare) · fas: $fasNamn$(if ($Torr) { ' · TORRKÖRNING, inget ändras' })" -ForegroundColor Magenta
-if ($Cfg.Kund) { Write-Host "  Kund: $($Cfg.Kund)" }
-Write-Host "  Målmapp: $($Cfg.Malmapp) · logg: $logg"
+Write-Host (T "  Muppa · migration of $($Cfg.Anvandare) · phase: $fasNamn$(if ($Torr) { ' · DRY RUN, nothing changes' })" "  Muppa · migrering av $($Cfg.Anvandare) · fas: $fasNamn$(if ($Torr) { ' · TORRKÖRNING, inget ändras' })") -ForegroundColor Magenta
+if ($Cfg.Kund) { Write-Host (T "  Customer: $($Cfg.Kund)" "  Kund: $($Cfg.Kund)") }
+Write-Host (T "  Target folder: $($Cfg.Malmapp) · log: $logg" "  Målmapp: $($Cfg.Malmapp) · logg: $logg")
 
 try {
     switch ($Fas) {
@@ -1428,31 +1496,31 @@ try {
                 $kopia = Join-Path $Cfg.Malmapp $SkriptNamn
                 if ($PSCommandPath -ne $kopia) {
                     Copy-Item -LiteralPath $PSCommandPath -Destination $kopia -Force
-                    Write-Host "  Skriptet finns nu också i $kopia (kör de andra faserna därifrån)."
+                    Write-Host (T "  The script is now also in $kopia (run the other phases from there)." "  Skriptet finns nu också i $kopia (kör de andra faserna därifrån).")
                 }
             }
             $plan = @('info', 'kopiera', 'bitlocker_spara', 'bitlocker_av', 'bokmarken', 'losenord', 'aktivitetsfalt', 'skarmdump', 'admin')
-            Write-Host "  Steg: $((@($plan | Where-Object { $Steg[$_] }) | ForEach-Object { $StegTitel[$_] }) -join ' · ')"
-            if (-not (Fraga 'Starta?' $true)) { throw 'Avbrutet.' }
+            Write-Host (T "  Steps: $((@($plan | Where-Object { $Steg[$_] }) | ForEach-Object { $StegTitel[$_] }) -join ' · ')" "  Steg: $((@($plan | Where-Object { $Steg[$_] }) | ForEach-Object { $StegTitel[$_] }) -join ' · ')")
+            if (-not (Fraga (T 'Start?' 'Starta?') $true)) { throw (T 'Cancelled.' 'Avbrutet.') }
             Kor-Steg $plan
-            Rubrik 'Nästa steg'
+            Rubrik (T 'Next steps' 'Nästa steg')
             $skript = Join-Path $Cfg.Malmapp $SkriptNamn
             if ($Steg.doman) {
-                Info "1. Logga ut och logga in som $(AdminVem)"
-                Info "2. Kör som administratör: powershell -ExecutionPolicy Bypass -File `"$skript`" -Doman"
+                Info (T "1. Sign out and sign in as $(AdminVem)" "1. Logga ut och logga in som $(AdminVem)")
+                Info (T "2. Run as administrator: powershell -ExecutionPolicy Bypass -File `"$skript`" -Doman" "2. Kör som administratör: powershell -ExecutionPolicy Bypass -File `"$skript`" -Doman")
             } elseif ($Steg.entra) {
-                Info "Kör som administratör: powershell -ExecutionPolicy Bypass -File `"$skript`" -Entra"
+                Info (T "Run as administrator: powershell -ExecutionPolicy Bypass -File `"$skript`" -Entra" "Kör som administratör: powershell -ExecutionPolicy Bypass -File `"$skript`" -Entra")
             } elseif ($Steg.aterlas) {
-                Info "Logga in som användaren och kör: powershell -ExecutionPolicy Bypass -File `"$skript`" -Aterlas"
+                Info (T "Sign in as the user and run: powershell -ExecutionPolicy Bypass -File `"$skript`" -Aterlas" "Logga in som användaren och kör: powershell -ExecutionPolicy Bypass -File `"$skript`" -Aterlas")
             }
-            Info 'Resten står i checklistan.'
+            Info (T 'The rest is in the checklist.' 'Resten står i checklistan.')
         }
         'doman' { Kor-Steg @('doman') }
         'entra' { Kor-Steg @('entra') }
         'aterlas' { Kor-Steg @('aterlas') }
     }
     Write-Host ''
-    Write-Host "  Klart: $fasNamn." -ForegroundColor Green
+    Write-Host (T "  Done: $fasNamn." "  Klart: $fasNamn.") -ForegroundColor Green
 } catch {
     Fel "$($_.Exception.Message)"
 } finally {
@@ -1502,12 +1570,12 @@ def choose_many(rows, chosen, title="", msg="", mood="happy", sub="", footer=Non
         lines.append("")
         n_on = len([v for v in toggles if v in chosen])
         if st["q"]:
-            lines.append("  " + accent("⌕ ") + bold(st["q"]) + accent("▏") + dim(f"  {len(sel)} träffar"))
+            lines.append("  " + accent("⌕ ") + bold(st["q"]) + accent("▏") + dim(L(f"  {len(sel)} matches", f"  {len(sel)} träffar")))
         elif title:
-            lines.append("  " + accent("▍") + bold(title) + dim(f"  {n_on} valda"))
+            lines.append("  " + accent("▍") + bold(title) + dim(L(f"  {n_on} selected", f"  {n_on} valda")))
         narrow = w < 58
         if not sel:
-            lines.append("     " + dim("Inga träffar. Backsteg ändrar, esc rensar."))
+            lines.append("     " + dim(L("No matches. Backspace edits, esc clears.", "Inga träffar. Backsteg ändrar, esc rensar.")))
         labels = [vr[k]["label"] for k in sel] or [""]
         lw = min(max(len(x) for x in labels) + 2, max(10, w - 16 if narrow else min(40, w // 2)))
         room = max(3, height() - len(lines) - 3)
@@ -1516,7 +1584,7 @@ def choose_many(rows, chosen, title="", msg="", mood="happy", sub="", footer=Non
         top = max(0, min(top, max(0, len(vr) - room)))
         st["top"] = top
         if top > 0:
-            lines.append(dim("     ↑ fler"))
+            lines.append(dim(L("     ↑ more", "     ↑ fler")))
         num = {k: n for n, k in keys.items()}
         for k in range(top, min(len(vr), top + room)):
             r = vr[k]
@@ -1539,13 +1607,13 @@ def choose_many(rows, chosen, title="", msg="", mood="happy", sub="", footer=Non
                     line += dim(ANSI.sub("", r["hint"]))
             lines.append(line)
         if top + room < len(vr):
-            lines.append(dim("     ↓ fler"))
+            lines.append(dim(L("     ↓ more", "     ↓ fler")))
         lines.append("")
         if st["q"]:
-            help_ = "mellanslag kryssar · enter klar · esc rensar" if w >= 50 else "␣ kryss · enter · esc"
+            help_ = L("space ticks · enter done · esc clears", "mellanslag kryssar · enter klar · esc rensar") if w >= 50 else L("␣ tick · enter · esc", "␣ kryss · enter · esc")
         else:
-            help_ = (footer or "↑/↓ · mellanslag/siffra kryssar · + alla/inga · enter klar · q avbryt") if w >= 80 else \
-                "␣/siffra kryssar · + alla · enter klar" if w >= 50 else "␣ kryss · enter klar"
+            help_ = (footer or L("↑/↓ · space/digit ticks · + all/none · enter done · q cancel", "↑/↓ · mellanslag/siffra kryssar · + alla/inga · enter klar · q avbryt")) if w >= 80 else \
+                L("␣/digit ticks · + all · enter done", "␣/siffra kryssar · + alla · enter klar") if w >= 50 else L("␣ tick · enter done", "␣ kryss · enter klar")
         lines.append(dim("   " + help_))
         live.draw(lines)
 
@@ -1650,7 +1718,7 @@ def choose_many(rows, chosen, title="", msg="", mood="happy", sub="", footer=Non
     picked = [r["value"] for r in items if not r.get("action") and r["value"] in chosen]
     if result == "":
         names = [r["label"] for r in items if not r.get("action") and r["value"] in chosen]
-        out(f"   {accent('❯')} " + (bold(", ".join(names)) if names else dim("inget valt")))
+        out(f"   {accent('❯')} " + (bold(", ".join(names)) if names else dim(L("nothing selected", "inget valt"))))
     return picked, (result or None)
 
 
@@ -1684,7 +1752,7 @@ def view_text(text, title):
         for k in range(st["top"], min(len(lines), st["top"] + room)):
             num = dim(str(k + 1).rjust(nw)) + " " if w >= 58 else ""
             buf.append(fit(" " + num + color(lines[k].replace("\t", "    ")), w))
-        buf.append(fit(dim("   ↑/↓ · PgUp/PgDn · mellanslag · g/G · q stänger" if w >= 50 else "   ↑↓ ␣ · q"), w))
+        buf.append(fit(dim(L("   ↑/↓ · PgUp/PgDn · space · g/G · q closes", "   ↑/↓ · PgUp/PgDn · mellanslag · g/G · q stänger") if w >= 50 else "   ↑↓ ␣ · q"), w))
         sys.stdout.write(buf[0] + "\n".join(buf[1:]))
         sys.stdout.flush()
 
@@ -1759,73 +1827,73 @@ def save_json(path, data):
 # ───────────────────────────── vad som kan migreras ─────────────────────────────
 # id, namn, typ, värde (User Shell Folders-namn eller sökväg i profilen), standardmapp, mapp i målmappen, förvald
 FOLDERS = [
-    ("skrivbord", "Skrivbord", "shell", "Desktop", "Desktop", "Skrivbord", True),
-    ("dokument", "Dokument", "shell", "Personal", "Documents", "Dokument", True),
-    ("bilder", "Bilder", "shell", "My Pictures", "Pictures", "Bilder", True),
-    ("hamtade", "Hämtade filer", "shell", "{374DE290-123F-4565-9164-39C4925E467B}", "Downloads", "Hamtade", True),
-    ("musik", "Musik", "shell", "My Music", "Music", "Musik", False),
-    ("videor", "Videor", "shell", "My Video", "Videos", "Videor", False),
-    ("favoriter", "Favoriter", "shell", "Favorites", "Favorites", "Favoriter", False),
-    ("kontakter", "Kontakter", "shell", "{56784854-C6CB-462B-8169-88E350ACB882}", "Contacts", "Kontakter", False),
+    ("skrivbord", L("Desktop", "Skrivbord"), "shell", "Desktop", "Desktop", "Skrivbord", True),
+    ("dokument", L("Documents", "Dokument"), "shell", "Personal", "Documents", "Dokument", True),
+    ("bilder", L("Pictures", "Bilder"), "shell", "My Pictures", "Pictures", "Bilder", True),
+    ("hamtade", L("Downloads", "Hämtade filer"), "shell", "{374DE290-123F-4565-9164-39C4925E467B}", "Downloads", "Hamtade", True),
+    ("musik", L("Music", "Musik"), "shell", "My Music", "Music", "Musik", False),
+    ("videor", L("Videos", "Videor"), "shell", "My Video", "Videos", "Videor", False),
+    ("favoriter", L("Favorites", "Favoriter"), "shell", "Favorites", "Favorites", "Favoriter", False),
+    ("kontakter", L("Contacts", "Kontakter"), "shell", "{56784854-C6CB-462B-8169-88E350ACB882}", "Contacts", "Kontakter", False),
     ("sticky", "Sticky Notes", "relativ",
      r"AppData\Local\Packages\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe\LocalState", "", "StickyNotes", False),
-    ("signaturer", "Outlook-signaturer", "relativ", r"AppData\Roaming\Microsoft\Signatures", "", "Signaturer", False),
+    ("signaturer", L("Outlook signatures", "Outlook-signaturer"), "relativ", r"AppData\Roaming\Microsoft\Signatures", "", "Signaturer", False),
 ]
 FOLDER_HINT = {
-    "skrivbord": "kan vara omdirigerad till OneDrive", "dokument": "kan vara omdirigerad till OneDrive",
-    "bilder": "kan vara omdirigerad till OneDrive", "hamtade": "Downloads",
-    "favoriter": "Internet Explorer-favoriter (inte Edge)", "kontakter": "Windows-kontakter (.contact)",
+    "skrivbord": L("may be redirected to OneDrive", "kan vara omdirigerad till OneDrive"), "dokument": L("may be redirected to OneDrive", "kan vara omdirigerad till OneDrive"),
+    "bilder": L("may be redirected to OneDrive", "kan vara omdirigerad till OneDrive"), "hamtade": "Downloads",
+    "favoriter": L("Internet Explorer favorites (not Edge)", "Internet Explorer-favoriter (inte Edge)"), "kontakter": L("Windows contacts (.contact)", "Windows-kontakter (.contact)"),
     "sticky": r"AppData\Local\Packages\…StickyNotes…\LocalState",
     "signaturer": r"AppData\Roaming\Microsoft\Signatures",
 }
 FOLDER_BY_ID = {f[0]: f for f in FOLDERS}
 BROWSERS = [("edge", "Microsoft Edge"), ("chrome", "Google Chrome")]
-BITLOCKER = [("pausa", "Spara nyckeln och pausa BitLocker", "rekommenderas: Suspend-BitLocker, slås på igen i -Entra"),
-             ("stang-av", "Spara nyckeln och stäng av BitLocker", "Disable-BitLocker: dekrypterar hela disken"),
-             ("spara", "Bara spara nyckeln", "rör inte skyddet"),
-             ("ingen", "Rör inte BitLocker", "")]
-DOMAIN = [("bada", "Lämna domänen och anslut till Entra ID", "-Doman, sedan -Entra"),
-          ("doman", "Bara lämna domänen", "-Doman"),
-          ("entra", "Bara anslut till Entra ID", "datorn är redan utanför domänen"),
-          ("inget", "Inget av dem", "bara kopiering och förberedelser")]
-CLOUD = [("hoppa", "Hoppa över filer som bara finns i molnet", "rekommenderas: de finns redan i OneDrive (/XA:O)"),
-         ("kopiera", "Försök kopiera dem också", "laddar ner dem om OneDrive körs, annars fel")]
+BITLOCKER = [("pausa", L("Save the key and suspend BitLocker", "Spara nyckeln och pausa BitLocker"), L("recommended: Suspend-BitLocker, turned back on in -Entra", "rekommenderas: Suspend-BitLocker, slås på igen i -Entra")),
+             ("stang-av", L("Save the key and turn off BitLocker", "Spara nyckeln och stäng av BitLocker"), L("Disable-BitLocker: decrypts the whole disk", "Disable-BitLocker: dekrypterar hela disken")),
+             ("spara", L("Only save the key", "Bara spara nyckeln"), L("leaves the protection alone", "rör inte skyddet")),
+             ("ingen", L("Leave BitLocker alone", "Rör inte BitLocker"), "")]
+DOMAIN = [("bada", L("Leave the domain and join Entra ID", "Lämna domänen och anslut till Entra ID"), L("-Doman, then -Entra", "-Doman, sedan -Entra")),
+          ("doman", L("Only leave the domain", "Bara lämna domänen"), "-Doman"),
+          ("entra", L("Only join Entra ID", "Bara anslut till Entra ID"), L("the computer is already out of the domain", "datorn är redan utanför domänen")),
+          ("inget", L("Neither", "Inget av dem"), L("only copying and preparation", "bara kopiering och förberedelser"))]
+CLOUD = [("hoppa", L("Skip files that only exist in the cloud", "Hoppa över filer som bara finns i molnet"), L("recommended: they are already in OneDrive (/XA:O)", "rekommenderas: de finns redan i OneDrive (/XA:O)")),
+         ("kopiera", L("Try to copy them too", "Försök kopiera dem också"), L("downloads them if OneDrive is running, otherwise errors", "laddar ner dem om OneDrive körs, annars fel"))]
 
 # Steg: id, rubrik, grupp. Alla kan väljas bort.
 STEPS = [
-    ("m_losenord", "Återställ lösenordet i Entra ID", "före migreringen"),
-    ("m_onedrive_fore", "Kontrollera OneDrive-backup", "före migreringen"),
-    ("info", "Datorinformation (domän, Entra, BitLocker)", "före migreringen"),
-    ("kopiera", "Kopiera valda mappar till målmappen", "före migreringen"),
-    ("bitlocker_spara", "Spara BitLocker-nyckeln", "före migreringen"),
-    ("bitlocker_av", "Pausa / stäng av BitLocker", "före migreringen"),
-    ("bokmarken", "Exportera bokmärken", "före migreringen"),
-    ("losenord", "Lösenordsexport (du sparar CSV)", "före migreringen"),
-    ("aktivitetsfalt", "Spara fästa ikoner i aktivitetsfältet", "före migreringen"),
-    ("skarmdump", "Skärmdump av skärmen", "före migreringen"),
-    ("admin", "Skapa lokalt admin-konto", "före migreringen"),
-    ("m_bitlocker_extern", "Spara BitLocker-nyckeln utanför datorn", "före migreringen"),
-    ("doman", "Lämna domänen (-Doman)", "från domän till Entra ID"),
-    ("entra", "Anslut till Entra ID (-Entra)", "från domän till Entra ID"),
-    ("m_hello", "Windows Hello: hoppa över första gången", "som användaren efteråt"),
-    ("aterlas", "Återläsning i nya profilen (-Aterlas)", "som användaren efteråt"),
-    ("m_onedrive", "OneDrive-synk kontrollerad", "som användaren efteråt"),
-    ("m_edge", "Importera lösenord, logga in i webbläsaren", "som användaren efteråt"),
-    ("m_outlook", "Outlook-profil", "som användaren efteråt"),
-    ("m_ikoner", "Fäst program enligt skärmdumpen", "som användaren efteråt"),
-    ("m_teams", "Teams med rätt konto", "som användaren efteråt"),
-    ("m_bibliotek", "Synka Teams- och SharePoint-bibliotek", "som användaren efteråt"),
-    ("m_radera", "Radera lösenordsfilerna (CSV)", "som användaren efteråt"),
-    ("m_meddela", "Meddela ansvarig att sätta nytt lösenord", "klart"),
+    ("m_losenord", L("Reset the password in Entra ID", "Återställ lösenordet i Entra ID"), L("before the migration", "före migreringen")),
+    ("m_onedrive_fore", L("Check the OneDrive backup", "Kontrollera OneDrive-backup"), L("before the migration", "före migreringen")),
+    ("info", L("Computer information (domain, Entra, BitLocker)", "Datorinformation (domän, Entra, BitLocker)"), L("before the migration", "före migreringen")),
+    ("kopiera", L("Copy the chosen folders to the target folder", "Kopiera valda mappar till målmappen"), L("before the migration", "före migreringen")),
+    ("bitlocker_spara", L("Save the BitLocker key", "Spara BitLocker-nyckeln"), L("before the migration", "före migreringen")),
+    ("bitlocker_av", L("Suspend / turn off BitLocker", "Pausa / stäng av BitLocker"), L("before the migration", "före migreringen")),
+    ("bokmarken", L("Export bookmarks", "Exportera bokmärken"), L("before the migration", "före migreringen")),
+    ("losenord", L("Password export (you save the CSV)", "Lösenordsexport (du sparar CSV)"), L("before the migration", "före migreringen")),
+    ("aktivitetsfalt", L("Save the pinned taskbar icons", "Spara fästa ikoner i aktivitetsfältet"), L("before the migration", "före migreringen")),
+    ("skarmdump", L("Screenshot of the screen", "Skärmdump av skärmen"), L("before the migration", "före migreringen")),
+    ("admin", L("Create a local admin account", "Skapa lokalt admin-konto"), L("before the migration", "före migreringen")),
+    ("m_bitlocker_extern", L("Save the BitLocker key outside the computer", "Spara BitLocker-nyckeln utanför datorn"), L("before the migration", "före migreringen")),
+    ("doman", L("Leave the domain (-Doman)", "Lämna domänen (-Doman)"), L("from domain to Entra ID", "från domän till Entra ID")),
+    ("entra", L("Join Entra ID (-Entra)", "Anslut till Entra ID (-Entra)"), L("from domain to Entra ID", "från domän till Entra ID")),
+    ("m_hello", L("Windows Hello: skip the first time", "Windows Hello: hoppa över första gången"), L("as the user afterwards", "som användaren efteråt")),
+    ("aterlas", L("Restore in the new profile (-Aterlas)", "Återläsning i nya profilen (-Aterlas)"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_onedrive", L("OneDrive sync checked", "OneDrive-synk kontrollerad"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_edge", L("Import passwords, sign in to the browser", "Importera lösenord, logga in i webbläsaren"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_outlook", L("Outlook profile", "Outlook-profil"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_ikoner", L("Pin apps as in the screenshot", "Fäst program enligt skärmdumpen"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_teams", L("Teams with the right account", "Teams med rätt konto"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_bibliotek", L("Sync Teams and SharePoint libraries", "Synka Teams- och SharePoint-bibliotek"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_radera", L("Delete the password files (CSV)", "Radera lösenordsfilerna (CSV)"), L("as the user afterwards", "som användaren efteråt")),
+    ("m_meddela", L("Tell the person responsible to set a new password", "Meddela ansvarig att sätta nytt lösenord"), L("done", "klart")),
 ]
 STEP_IDS = [s[0] for s in STEPS]
 STEP_LABEL = {s[0]: s[1] for s in STEPS}
 SCRIPT_STEPS = [s for s in STEP_IDS if not s.startswith("m_")]
-OPTIONAL_FIELDS = [("kund", "Kund"), ("ansvarig", "Ansvarig (får meddelandet när det är klart)"),
-                   ("dator", "Datorns namn"), ("upn", "Användarens e-post (UPN) i Entra ID"),
-                   ("tekniker", "Tekniker"), ("arende", "Ärendenummer")]
-SHORT_LABEL = {"kund": "Kund", "ansvarig": "Ansvarig", "dator": "Dator", "upn": "E-post (UPN)",
-               "tekniker": "Tekniker", "arende": "Ärende"}
+OPTIONAL_FIELDS = [("kund", L("Customer", "Kund")), ("ansvarig", L("Responsible (gets the message when it is done)", "Ansvarig (får meddelandet när det är klart)")),
+                   ("dator", L("Computer name", "Datorns namn")), ("upn", L("The user's email (UPN) in Entra ID", "Användarens e-post (UPN) i Entra ID")),
+                   ("tekniker", L("Technician", "Tekniker")), ("arende", L("Ticket number", "Ärendenummer"))]
+SHORT_LABEL = {"kund": L("Customer", "Kund"), "ansvarig": L("Responsible", "Ansvarig"), "dator": L("Computer", "Dator"), "upn": L("Email (UPN)", "E-post (UPN)"),
+               "tekniker": L("Technician", "Tekniker"), "arende": L("Ticket", "Ärende")}
 TEMPLATE_KEYS = ["folders", "custom", "cloud", "browsers", "bitlocker", "admin", "admin_name", "domain",
                  "on", "off", "malmapp", "kund", "ansvarig", "tekniker"]
 DEFAULT_ANS = {"user": "", "profile": "", "malmapp": r"C:\temp\{användare}",
@@ -1948,63 +2016,76 @@ def build_script(a):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     meta = [("Kund", a.get("kund")), ("Dator", a.get("dator")), ("Ansvarig", a.get("ansvarig")),
             ("Ärende", a.get("arende")), ("Tekniker", a.get("tekniker"))]
-    L = []
-    L.append("<#")
-    L.append(".SYNOPSIS")
-    L.append(f"    Migrering från lokal AD-domän till Entra ID: {safe_comment(user)}. Skapat av Muppa {VERSION}, {now}.")
-    L.append(".DESCRIPTION")
-    L.append("    Körs i Windows PowerShell 5.1 på datorn som migreras, i den här ordningen:")
-    L.append(f"      .\\{name}              förbered (som administratör): kopiera, BitLocker, webbläsare, admin-konto")
+    S = []
+    S.append("<#")
+    S.append(".SYNOPSIS")
+    S.append(L(f"    Migration from on-premises AD domain to Entra ID: {safe_comment(user)}. Created by Muppa {VERSION}, {now}.",
+               f"    Migrering från lokal AD-domän till Entra ID: {safe_comment(user)}. Skapat av Muppa {VERSION}, {now}."))
+    S.append(".DESCRIPTION")
+    S.append(L("    Runs in Windows PowerShell 5.1 on the computer being migrated, in this order:",
+               "    Körs i Windows PowerShell 5.1 på datorn som migreras, i den här ordningen:"))
+    S.append(L(f"      .\\{name}              prepare (as administrator): copy, BitLocker, browsers, admin account",
+               f"      .\\{name}              förbered (som administratör): kopiera, BitLocker, webbläsare, admin-konto"))
     if "doman" in steps:
-        L.append(f"      .\\{name} -Doman       lämna domänen (efter bekräftelse) och starta om")
+        S.append(L(f"      .\\{name} -Doman       leave the domain (after confirmation) and restart",
+                   f"      .\\{name} -Doman       lämna domänen (efter bekräftelse) och starta om"))
     if "entra" in steps:
-        L.append(f"      .\\{name} -Entra       anslut till Entra ID (öppnar Inställningar), BitLocker-nyckel till Entra")
+        S.append(L(f"      .\\{name} -Entra       join Entra ID (opens Settings), BitLocker key to Entra",
+                   f"      .\\{name} -Entra       anslut till Entra ID (öppnar Inställningar), BitLocker-nyckel till Entra"))
     if "aterlas" in steps:
-        L.append(f"      .\\{name} -Aterlas     som användaren: kopiera tillbaka, OneDrive, Outlook och Teams")
-    L.append("    Provkör först med -Torrkorning (eller -WhatIf): då visas bara vad som skulle göras.")
-    L.append("    Inga lösenord står i skriptet. Admin-kontots lösenord frågas efter när skriptet körs.")
-    L.append(f"    Starta: powershell.exe -ExecutionPolicy Bypass -File .\\{name} -Torrkorning")
-    L.append(".PARAMETER Doman")
-    L.append("    Lämna domänen (Remove-Computer) efter bekräftelse.")
-    L.append(".PARAMETER Entra")
-    L.append("    Öppna Inställningar för anslutning till Entra ID och säkerhetskopiera BitLocker-nyckeln dit.")
-    L.append(".PARAMETER Aterlas")
-    L.append("    Körs som användaren i den nya profilen: kopiera tillbaka från målmappen.")
-    L.append(".PARAMETER Torrkorning")
-    L.append("    Visa vad som skulle göras, ändra ingenting (samma som -WhatIf).")
-    L.append("#>")
-    L.append("[CmdletBinding(SupportsShouldProcess = $true)]")
-    L.append("param(")
-    L.append("    [switch]$Doman,")
-    L.append("    [switch]$Entra,")
-    L.append("    [switch]$Aterlas,")
-    L.append("    [switch]$Torrkorning")
-    L.append(")")
-    L.append("")
-    L.append("# ─────────────── Inställningar (skapade av Muppa) ───────────────")
-    L.append("$Cfg = @{")
+        S.append(L(f"      .\\{name} -Aterlas     as the user: copy back, OneDrive, Outlook and Teams",
+                   f"      .\\{name} -Aterlas     som användaren: kopiera tillbaka, OneDrive, Outlook och Teams"))
+    S.append(L("    Try it first with -Torrkorning (or -WhatIf): it only shows what would be done.",
+               "    Provkör först med -Torrkorning (eller -WhatIf): då visas bara vad som skulle göras."))
+    S.append(L("    No passwords are in the script. The admin account password is asked for when the script runs.",
+               "    Inga lösenord står i skriptet. Admin-kontots lösenord frågas efter när skriptet körs."))
+    S.append(L("    Start: ", "    Starta: ") + f"powershell.exe -ExecutionPolicy Bypass -File .\\{name} -Torrkorning")
+    S.append(".PARAMETER Doman")
+    S.append(L("    Leave the domain (Remove-Computer) after confirmation.", "    Lämna domänen (Remove-Computer) efter bekräftelse."))
+    S.append(".PARAMETER Entra")
+    S.append(L("    Open Settings to join Entra ID and back up the BitLocker key there.",
+               "    Öppna Inställningar för anslutning till Entra ID och säkerhetskopiera BitLocker-nyckeln dit."))
+    S.append(".PARAMETER Aterlas")
+    S.append(L("    Runs as the user in the new profile: copy back from the target folder.",
+               "    Körs som användaren i den nya profilen: kopiera tillbaka från målmappen."))
+    S.append(".PARAMETER Torrkorning")
+    S.append(L("    Show what would be done, change nothing (same as -WhatIf).", "    Visa vad som skulle göras, ändra ingenting (samma som -WhatIf)."))
+    S.append("#>")
+    S.append("[CmdletBinding(SupportsShouldProcess = $true)]")
+    S.append("param(")
+    S.append("    [switch]$Doman,")
+    S.append("    [switch]$Entra,")
+    S.append("    [switch]$Aterlas,")
+    S.append("    [switch]$Torrkorning")
+    S.append(")")
+    S.append("")
+    S.append(L("# ─────────────── Settings (created by Muppa) ───────────────", "# ─────────────── Inställningar (skapade av Muppa) ───────────────"))
+    S.append(L("# Language of the messages: 'en' or 'sv'.", "# Språk för meddelandena: 'en' eller 'sv'.") )
+    S.append(f"$Sprak = '{LANG}'")
+    S.append("$Cfg = @{")
     rows = [("Anvandare", user), ("Profil", a["profile"]), ("Malmapp", mal), ("AdminNamn", admin),
             ("BitLocker", bl), ("Molnfiler", a["cloud"]), ("Upn", a.get("upn") or "")] + \
            [(k.replace("Ä", "A"), v or "") for k, v in meta]
     kw = max(len(k) for k, _ in rows + [("Webblasare", "")]) + 1
     for k, v in rows:
-        L.append(f"    {k.ljust(kw)}= {psq(v)}")
-    L.append("    " + "Webblasare".ljust(kw) + "= @(" + ", ".join(psq(b) for b in a["browsers"]) + ")")
-    L.append("}")
-    L.append("")
-    L.append("# Stegen. $false = hoppas över.")
-    L.append("$Steg = @{")
+        S.append(f"    {k.ljust(kw)}= {psq(v)}")
+    S.append("    " + "Webblasare".ljust(kw) + "= @(" + ", ".join(psq(b) for b in a["browsers"]) + ")")
+    S.append("}")
+    S.append("")
+    S.append(L("# The steps. $false = skipped.", "# Stegen. $false = hoppas över."))
+    S.append("$Steg = @{")
     for sid in SCRIPT_STEPS:
-        L.append(f"    {sid.ljust(16)}= " + ("$true" if sid in steps else "$false").ljust(7) + f"  # {STEP_LABEL[sid]}")
-    L.append("}")
-    L.append("")
-    L.append("# Mapparna som kopieras. Typ shell = läses ur användarens User Shell Folders (följer OneDrive-omdirigering).")
-    L.append("$Mappar = @(")
+        S.append(f"    {sid.ljust(16)}= " + ("$true" if sid in steps else "$false").ljust(7) + f"  # {STEP_LABEL[sid]}")
+    S.append("}")
+    S.append("")
+    S.append(L("# The folders that are copied. Typ shell = read from the user's User Shell Folders (follows OneDrive redirection).",
+               "# Mapparna som kopieras. Typ shell = läses ur användarens User Shell Folders (följer OneDrive-omdirigering)."))
+    S.append("$Mappar = @(")
     for e in folder_entries(a):
-        L.append("    @{ " + "; ".join(f"{k} = {psq(e[k])}" for k in ("Id", "Namn", "Typ", "Varde", "Standard", "Mal")) + " }")
-    L.append(")")
-    L.append("")
-    return name, "\r\n".join(L + PS_BODY.strip("\n").splitlines()) + "\r\n"
+        S.append("    @{ " + "; ".join(f"{k} = {psq(e[k])}" for k in ("Id", "Namn", "Typ", "Varde", "Standard", "Mal")) + " }")
+    S.append(")")
+    S.append("")
+    return name, "\r\n".join(S + PS_BODY.strip("\n").splitlines()) + "\r\n"
 
 
 # ───────────────────────────── checklistan ─────────────────────────────
@@ -2013,95 +2094,105 @@ def build_checklist(a, script_name):
     user = a["user"]
     mal = malmapp_for(a)
     admin = a.get("admin_name") or "lokaladmin"
-    login = f"**.\\{admin}**" if "admin" in steps else "ett lokalt admin-konto (du måste kunna lösenordet)"
+    login = f"**.\\{admin}**" if "admin" in steps else L("a local admin account (you must know the password)", "ett lokalt admin-konto (du måste kunna lösenordet)")
     run = f"powershell.exe -ExecutionPolicy Bypass -File {mal}\\{script_name}"
     names = [FOLDER_BY_ID[f][1] for f in a["folders"] if f in FOLDER_BY_ID] + list(a["custom"])
-    browsers = " och ".join(dict(BROWSERS)[b].split()[-1] for b in a["browsers"]) or "webbläsaren"
+    browsers = L(" and ", " och ").join(dict(BROWSERS)[b].split()[-1] for b in a["browsers"]) or L("the browser", "webbläsaren")
     who = a.get("upn") or user
-    L = [f"# Migrering till Entra ID: {user}", ""]
-    meta = [("Användare", f"{user} (`{a['profile']}`)")]
+    S = [L(f"# Migration to Entra ID: {user}", f"# Migrering till Entra ID: {user}"), ""]
+    meta = [(L("User", "Användare"), f"{user} (`{a['profile']}`)")]
     for k, _ in OPTIONAL_FIELDS:
         if a.get(k):
             meta.append((SHORT_LABEL[k], a[k]))
-    meta += [("Målmapp", f"`{mal}`"), ("Skapad", f"{datetime.now():%Y-%m-%d %H:%M} med Muppa {VERSION}")]
-    L += ["| | |", "|---|---|"] + [f"| {k} | {str(v).replace('|', '/')} |" for k, v in meta] + [""]
-    L += [f"Skript: `{script_name}`. Kopiera det till datorn (t.ex. `C:\\temp`) och kör i Windows PowerShell "
-          f"som administratör. Första körningen kopierar skriptet till målmappen, så att resten kan köras därifrån.",
-          "", "```powershell", f"powershell.exe -ExecutionPolicy Bypass -File .\\{script_name} -Torrkorning   # provkör först",
+    meta += [(L("Target folder", "Målmapp"), f"`{mal}`"), (L("Created", "Skapad"), L(f"{datetime.now():%Y-%m-%d %H:%M} with Muppa {VERSION}", f"{datetime.now():%Y-%m-%d %H:%M} med Muppa {VERSION}"))]
+    S += ["| | |", "|---|---|"] + [f"| {k} | {str(v).replace('|', '/')} |" for k, v in meta] + [""]
+    S += [L(f"Script: `{script_name}`. Copy it to the computer (e.g. `C:\\temp`) and run it in Windows PowerShell "
+            f"as administrator. The first run copies the script to the target folder, so the rest can be run from there.",
+            f"Skript: `{script_name}`. Kopiera det till datorn (t.ex. `C:\\temp`) och kör i Windows PowerShell "
+            f"som administratör. Första körningen kopierar skriptet till målmappen, så att resten kan köras därifrån."),
+          "", "```powershell", f"powershell.exe -ExecutionPolicy Bypass -File .\\{script_name} -Torrkorning   # " + L("try it first", "provkör först"),
           f"powershell.exe -ExecutionPolicy Bypass -File .\\{script_name}", "```", ""]
 
     def box(sid, text, sub=None):
         if sid is None or sid in steps:
-            L.append(f"- [ ] {text}")
+            S.append(f"- [ ] {text}")
             for s in sub or []:
-                L.append(f"  - [ ] {s}")
+                S.append(f"  - [ ] {s}")
 
-    L.append("## 1. Före migreringen")
-    L.append("")
-    box("m_losenord", "Återställ användarens lösenord i Entra ID (har användaren ett lokalt konto: använd det lokala lösenordet).")
-    box("m_onedrive_fore", "Kontrollera att OneDrive säkerhetskopierar Skrivbord, Dokument och Bilder och är helt synkat "
-                           "(OneDrive → Inställningar → Synkronisera och säkerhetskopiera).")
+    S.append(L("## 1. Before the migration", "## 1. Före migreringen"))
+    S.append("")
+    box("m_losenord", L("Reset the user's password in Entra ID (if the user has a local account: use the local password).",
+                        "Återställ användarens lösenord i Entra ID (har användaren ett lokalt konto: använd det lokala lösenordet)."))
+    box("m_onedrive_fore", L("Check that OneDrive backs up Desktop, Documents and Pictures and is fully synced "
+                             "(OneDrive → Settings → Sync and back up).",
+                             "Kontrollera att OneDrive säkerhetskopierar Skrivbord, Dokument och Bilder och är helt synkat "
+                             "(OneDrive → Inställningar → Synkronisera och säkerhetskopiera)."))
     fore = []
     if "info" in steps:
-        fore.append(f"Datorinformation sparad (`{mal}\\Datorinfo.txt`)")
+        fore.append(L(f"Computer information saved (`{mal}\\Datorinfo.txt`)", f"Datorinformation sparad (`{mal}\\Datorinfo.txt`)"))
     if "kopiera" in steps:
-        fore.append(f"Mappar kopierade till `{mal}`: {', '.join(names) or '–'} (läs robocopy-sammanfattningen)")
+        fore.append(L(f"Folders copied to `{mal}`: {', '.join(names) or '–'} (read the robocopy summary)", f"Mappar kopierade till `{mal}`: {', '.join(names) or '–'} (läs robocopy-sammanfattningen)"))
     if "bitlocker_spara" in steps:
-        fore.append(f"BitLocker-nyckeln sparad i `{mal}\\BitLocker-<dator>.txt`")
+        fore.append(L(f"BitLocker key saved in `{mal}\\BitLocker-<computer>.txt`", f"BitLocker-nyckeln sparad i `{mal}\\BitLocker-<dator>.txt`"))
     if "bitlocker_av" in steps:
-        fore.append("BitLocker avstängt (vänta tills `manage-bde -status` visar Fully Decrypted)" if a["bitlocker"] == "stang-av"
-                    else "BitLocker pausat")
+        fore.append(L("BitLocker turned off (wait until `manage-bde -status` shows Fully Decrypted)", "BitLocker avstängt (vänta tills `manage-bde -status` visar Fully Decrypted)")
+                    if a["bitlocker"] == "stang-av" else L("BitLocker suspended", "BitLocker pausat"))
     if "bokmarken" in steps:
-        fore.append(f"Bokmärken exporterade från {browsers} (`Webblasare\\*-bokmarken.html`)")
+        fore.append(L(f"Bookmarks exported from {browsers} (`Webblasare\\*-bokmarken.html`)", f"Bokmärken exporterade från {browsers} (`Webblasare\\*-bokmarken.html`)"))
     if "losenord" in steps:
-        fore.append(f"Lösenord exporterade till CSV från {browsers} (`Webblasare\\*-losenord.csv`), i användarens session")
+        fore.append(L(f"Passwords exported to CSV from {browsers} (`Webblasare\\*-losenord.csv`), in the user's session", f"Lösenord exporterade till CSV från {browsers} (`Webblasare\\*-losenord.csv`), i användarens session"))
     if "aktivitetsfalt" in steps:
-        fore.append("Fästa ikoner sparade (`Aktivitetsfalt\\`)")
+        fore.append(L("Pinned icons saved (`Aktivitetsfalt\\`)", "Fästa ikoner sparade (`Aktivitetsfalt\\`)"))
     if "skarmdump" in steps:
-        fore.append("Skärmdump av aktivitetsfältet sparad")
+        fore.append(L("Screenshot of the taskbar saved", "Skärmdump av aktivitetsfältet sparad"))
     if "admin" in steps:
-        fore.append(f"Lokalt admin-konto **{admin}** skapat. Lösenordet förvarat säkert (det står inte i skriptet)")
+        fore.append(L(f"Local admin account **{admin}** created. The password kept safe (it is not in the script)", f"Lokalt admin-konto **{admin}** skapat. Lösenordet förvarat säkert (det står inte i skriptet)"))
     if fore:
-        box(None, f"Kör `{script_name}` som administratör:", fore)
-    box("m_bitlocker_extern", "Spara BitLocker-nyckeln utanför datorn (dokumentation/ärende). Målmappen ligger på samma disk.")
-    L.append("")
+        box(None, L(f"Run `{script_name}` as administrator:", f"Kör `{script_name}` som administratör:"), fore)
+    box("m_bitlocker_extern", L("Save the BitLocker key outside the computer (documentation/ticket). The target folder is on the same disk.",
+                                "Spara BitLocker-nyckeln utanför datorn (dokumentation/ärende). Målmappen ligger på samma disk."))
+    S.append("")
 
     if "doman" in steps or "entra" in steps:
-        L.append("## 2. Byt från domän till Entra ID")
-        L.append("")
-        box(None, f"Logga ut och logga in som {login}.")
-        box("doman", f"Kör `{run} -Doman` och skriv LÄMNA. Starta om.")
+        S.append(L("## 2. Switch from domain to Entra ID", "## 2. Byt från domän till Entra ID"))
+        S.append("")
+        box(None, L(f"Sign out and sign in as {login}.", f"Logga ut och logga in som {login}."))
+        box("doman", L(f"Run `{run} -Doman` and type LEAVE. Restart.", f"Kör `{run} -Doman` och skriv LÄMNA. Starta om."))
         if "entra" in steps:
-            box(None, f"Logga in som {login} och kör `{run} -Entra`.")
-            box(None, "Inställningar → Konton → Åtkomst till arbete eller skola → Anslut → "
-                      "**Anslut den här enheten till Microsoft Entra ID**. Logga in med användarens uppgifter"
+            box(None, L(f"Sign in as {login} and run `{run} -Entra`.", f"Logga in som {login} och kör `{run} -Entra`."))
+            box(None, L("Settings → Accounts → Access work or school → Connect → "
+                        "**Join this device to Microsoft Entra ID**. Sign in with the user's credentials",
+                        "Inställningar → Konton → Åtkomst till arbete eller skola → Anslut → "
+                        "**Anslut den här enheten till Microsoft Entra ID**. Logga in med användarens uppgifter")
                       + (f" ({a['upn']})" if a.get("upn") else "") + ".")
-            box(None, "Kontrollera att `dsregcmd /status` visar `AzureAdJoined : YES`. Starta om.")
-        L.append("")
+            box(None, L("Check that `dsregcmd /status` shows `AzureAdJoined : YES`. Restart.", "Kontrollera att `dsregcmd /status` visar `AzureAdJoined : YES`. Starta om."))
+        S.append("")
 
-    L.append("## 3. Första inloggningen som användaren")
-    L.append("")
-    box(None, f"Logga in som användaren (Annan användare → {who}).")
-    box("m_hello", "Windows Hello: hoppa över vid första inloggningen.")
+    S.append(L("## 3. The first sign-in as the user", "## 3. Första inloggningen som användaren"))
+    S.append("")
+    box(None, L(f"Sign in as the user (Other user → {who}).", f"Logga in som användaren (Annan användare → {who})."))
+    box("m_hello", L("Windows Hello: skip it at the first sign-in.", "Windows Hello: hoppa över vid första inloggningen."))
     if "aterlas" in steps:
-        box(None, f"Kör `{run} -Aterlas` som användaren (inte som administratör): kopierar tillbaka, kontrollerar "
-                  "OneDrive och öppnar Outlook och Teams.")
-    box("m_onedrive", "OneDrive är inloggat och synkar. Skrivbord, Dokument och Bilder finns och säkerhetskopieras.")
-    box("m_edge", f"Logga in i {browsers}. Importera bokmärken (HTML) och lösenord (CSV).")
-    box("m_outlook", "Starta Outlook så att profilen skapas. Kontrollera signaturen.")
-    box("m_ikoner", "Fäst programmen i aktivitetsfältet enligt skärmdumpen.")
-    box("m_teams", "Teams är inloggat med rätt konto.")
-    box("m_bibliotek", "Synka Teams- och SharePoint-bibliotek (Synkronisera i webbläsaren).")
-    box("m_radera", f"Radera lösenordsfilerna (`{mal}\\Webblasare\\*.csv`) när de är importerade.")
-    L.append("")
+        box(None, L(f"Run `{run} -Aterlas` as the user (not as administrator): copies back, checks "
+                    "OneDrive and opens Outlook and Teams.",
+                    f"Kör `{run} -Aterlas` som användaren (inte som administratör): kopierar tillbaka, kontrollerar "
+                    "OneDrive och öppnar Outlook och Teams."))
+    box("m_onedrive", L("OneDrive is signed in and syncing. Desktop, Documents and Pictures are there and backed up.", "OneDrive är inloggat och synkar. Skrivbord, Dokument och Bilder finns och säkerhetskopieras."))
+    box("m_edge", L(f"Sign in to {browsers}. Import bookmarks (HTML) and passwords (CSV).", f"Logga in i {browsers}. Importera bokmärken (HTML) och lösenord (CSV)."))
+    box("m_outlook", L("Start Outlook so the profile is created. Check the signature.", "Starta Outlook så att profilen skapas. Kontrollera signaturen."))
+    box("m_ikoner", L("Pin the apps to the taskbar as in the screenshot.", "Fäst programmen i aktivitetsfältet enligt skärmdumpen."))
+    box("m_teams", L("Teams is signed in with the right account.", "Teams är inloggat med rätt konto."))
+    box("m_bibliotek", L("Sync Teams and SharePoint libraries (Sync in the browser).", "Synka Teams- och SharePoint-bibliotek (Synkronisera i webbläsaren)."))
+    box("m_radera", L(f"Delete the password files (`{mal}\\Webblasare\\*.csv`) once they are imported.", f"Radera lösenordsfilerna (`{mal}\\Webblasare\\*.csv`) när de är importerade."))
+    S.append("")
     if "m_meddela" in steps:
-        L.append("## Klart")
-        L.append("")
-        box("m_meddela", "Meddela ansvarig" + (f" ({a['ansvarig']})" if a.get("ansvarig") else "") +
-            " att användaren ska sätta ett nytt lösenord.")
-        L.append("")
-    L += ["## Anteckningar", "", ""]
-    return "\n".join(L)
+        S.append(L("## Done", "## Klart"))
+        S.append("")
+        box("m_meddela", L("Tell the person responsible", "Meddela ansvarig") + (f" ({a['ansvarig']})" if a.get("ansvarig") else "") +
+            L(" that the user should set a new password.", " att användaren ska sätta ett nytt lösenord."))
+        S.append("")
+    S += [L("## Notes", "## Anteckningar"), "", ""]
+    return "\n".join(S)
 
 
 def save_files(a):
@@ -2125,10 +2216,10 @@ def templates():
 
 def template_summary(t):
     parts = ["+".join(FOLDER_BY_ID[f][1].split()[0] for f in t.get("folders", []) if f in FOLDER_BY_ID)
-             + (f" +{len(t['custom'])} egna" if t.get("custom") else "")]
-    parts.append("+".join(dict(BROWSERS)[b].split()[-1] for b in t.get("browsers", [])) or "ingen webbläsare")
-    parts.append({"pausa": "BitLocker paus", "stang-av": "BitLocker av", "spara": "BitLocker-nyckel",
-                  "ingen": "utan BitLocker"}.get(t.get("bitlocker"), ""))
+             + (L(f" +{len(t['custom'])} own", f" +{len(t['custom'])} egna") if t.get("custom") else "")]
+    parts.append("+".join(dict(BROWSERS)[b].split()[-1] for b in t.get("browsers", [])) or L("no browser", "ingen webbläsare"))
+    parts.append({"pausa": L("BitLocker suspended", "BitLocker paus"), "stang-av": L("BitLocker off", "BitLocker av"), "spara": "BitLocker-nyckel",
+                  "ingen": L("no BitLocker", "utan BitLocker")}.get(t.get("bitlocker"), ""))
     if t.get("admin"):
         parts.append("admin " + (t.get("admin_name") or "lokaladmin"))
     if t.get("kund"):
@@ -2185,31 +2276,31 @@ def windows_profiles():
 def check_user(v):
     u, prof = split_user(v)
     if not u or re.search(r'[/\[\]:;|=,+*?<>"]', u):
-        return "Det ser inte ut som ett användarnamn eller en profilmapp."
+        return L("That doesn't look like a user name or a profile folder.", "Det ser inte ut som ett användarnamn eller en profilmapp.")
     return None
 
 
 def check_admin(v):
     if len(v) > 20 or re.search(r'[/\\\[\]:;|=,+*?<>@"]', v) or v.strip(". ") == "":
-        return "Högst 20 tecken, inga / \\ [ ] : ; | = , + * ? < > @ \"."
+        return L("At most 20 characters, no / \\ [ ] : ; | = , + * ? < > @ \".", "Högst 20 tecken, inga / \\ [ ] : ; | = , + * ? < > @ \".")
     return None
 
 
 def ask_user(a):
     profs = windows_profiles()
     if profs:
-        rows = [dict(label=n, hint=f"{p}" + (f" · senast {w}" if w else ""), value=p) for n, p, w in profs]
-        rows.append(dict(label="Skriv själv…", hint="annat namn eller sökväg", value="__egen__"))
-        v = choose(rows, title="Användare", start=a["profile"] or None)
+        rows = [dict(label=n, hint=f"{p}" + (L(f" · last {w}", f" · senast {w}") if w else ""), value=p) for n, p, w in profs]
+        rows.append(dict(label=L("Type it yourself…", "Skriv själv…"), hint=L("another name or path", "annat namn eller sökväg"), value="__egen__"))
+        v = choose(rows, title=L("User", "Användare"), start=a["profile"] or None)
         if v is None:
             raise Cancel()
         if v != "__egen__":
             a["user"], a["profile"] = split_user(v)
             return
-    v = ask_text("Användarnamn eller profilmapp (t.ex. anna eller C:\\Users\\anna)", default=a["profile"] or "",
+    v = ask_text(L("User name or profile folder (e.g. anna or C:\\Users\\anna)", "Användarnamn eller profilmapp (t.ex. anna eller C:\\Users\\anna)"), default=a["profile"] or "",
                  required=True, check=check_user)
     a["user"], a["profile"] = split_user(v)
-    out("    " + dim(f"profil: {a['profile']}"))
+    out("    " + dim(L(f"profile: {a['profile']}", f"profil: {a['profile']}")))
 
 
 def find_puppa():
@@ -2245,23 +2336,23 @@ def tenant_users():
 
 def ask_upn(a):
     """Användarens e-post i Entra ID: välj i tenanten via Puppa (fuzzy-sök, användarnamnet som förslag) eller skriv."""
-    if find_puppa() and confirm("Söka upp användaren i tenanten via Puppa?", True):
-        out("    " + dim("Hämtar användarna i tenanten (Puppa loggar in i Graph om det behövs)…"))
+    if find_puppa() and confirm(L("Look up the user in the tenant via Puppa?", "Söka upp användaren i tenanten via Puppa?"), True):
+        out("    " + dim(L("Fetching the users in the tenant (Puppa signs in to Graph if needed)…", "Hämtar användarna i tenanten (Puppa loggar in i Graph om det behövs)…")))
         tenant, users = tenant_users()
         if users:
             first = fuzzy_rank(a.get("user") or "", users, lambda u: f"{u[1]} {u[0]}") if a.get("user") else []
             rest = [u for u in users if u not in first]
             rows = [dict(label=n, hint=d or v, value=v) for v, n, d in first + rest]
-            rows.append(dict(label="Skriv själv…", hint="annan adress", value="__egen__"))
-            v = choose(rows, title=f"Användaren i Entra ID{f' · {tenant}' if tenant else ''} – skriv för att söka",
+            rows.append(dict(label=L("Type it yourself…", "Skriv själv…"), hint=L("another address", "annan adress"), value="__egen__"))
+            v = choose(rows, title=L(f"The user in Entra ID{f' · {tenant}' if tenant else ''} – type to search", f"Användaren i Entra ID{f' · {tenant}' if tenant else ''} – skriv för att söka"),
                        start=rows[0]["value"] if first else None)
             if v is None:
                 raise Cancel()
             if v != "__egen__":
                 return v
         else:
-            out("    " + yellow("Kunde inte hämta användarna. Skriv adressen själv."))
-    return ask_text("Användarens e-post (UPN) i Entra ID" + dim(" (valfritt, enter hoppar över)"),
+            out("    " + yellow(L("Could not fetch the users. Type the address yourself.", "Kunde inte hämta användarna. Skriv adressen själv.")))
+    return ask_text(L("The user's email (UPN) in Entra ID", "Användarens e-post (UPN) i Entra ID") + dim(L(" (optional, enter skips)", " (valfritt, enter hoppar över)")),
                     default=a.get("upn") or "")
 
 
@@ -2270,11 +2361,11 @@ def ask_malmapp(a):
 
     def check(v):
         if not win_path_ok(v):
-            return "Ange en Windows-sökväg, t.ex. C:\\temp\\" + a["user"]
+            return L("Enter a Windows path, e.g. C:\\temp\\", "Ange en Windows-sökväg, t.ex. C:\\temp\\") + a["user"]
         if (v.lower().rstrip("\\") + "\\").startswith(a["profile"].lower() + "\\"):
-            return "Målmappen får inte ligga i profilen som kopieras."
+            return L("The target folder must not be inside the profile being copied.", "Målmappen får inte ligga i profilen som kopieras.")
         return None
-    v = ask_text("Målmapp på datorn (där allt sparas)", default=default, required=True, check=check).rstrip("\\")
+    v = ask_text(L("Target folder on the computer (where everything is saved)", "Målmapp på datorn (där allt sparas)"), default=default, required=True, check=check).rstrip("\\")
     a["malmapp"] = user_pattern(v, a["user"])
 
 
@@ -2285,17 +2376,17 @@ def ask_folders(a):
         rows = [("head", "Profilmappar")]
         rows += [dict(label=f[1], hint=FOLDER_HINT.get(f[0], ""), value=f[0]) for f in FOLDERS]
         if customs:
-            rows.append(("head", "Egna sökvägar"))
+            rows.append(("head", L("Own paths", "Egna sökvägar")))
             rows += [dict(label=p, hint="egen", value="c:" + p) for p in customs]
-        rows.append(dict(label="Lägg till egen sökväg…", hint="i profilen eller absolut, t.ex. D:\\Projekt", value="__add__",
+        rows.append(dict(label=L("Add your own path…", "Lägg till egen sökväg…"), hint=L("in the profile or absolute, e.g. D:\\Projects", "i profilen eller absolut, t.ex. D:\\Projekt"), value="__add__",
                          action=True))
-        res = choose_many(rows, chosen, title="Vilka mappar ska kopieras?")
+        res = choose_many(rows, chosen, title=L("Which folders should be copied?", "Vilka mappar ska kopieras?"))
         if res is None:
             raise Cancel()
         picked, act = res
         chosen = set(picked)
         if act == "__add__":
-            p = ask_text("Sökväg (relativ till profilen, %USERPROFILE%\\… eller t.ex. D:\\Projekt)")
+            p = ask_text(L("Path (relative to the profile, %USERPROFILE%\\… or e.g. D:\\Projects)", "Sökväg (relativ till profilen, %USERPROFILE%\\… eller t.ex. D:\\Projekt)"))
             if p:
                 p = p.strip().strip('"')
                 if p not in customs:
@@ -2323,9 +2414,9 @@ def ask_steps(a):
         if g != group:
             rows.append(("head", g))
             group = g
-        kind = "manuellt, i checklistan" if sid.startswith("m_") else "skriptet"
-        rows.append(dict(label=label, hint=kind + ("" if sid in derived else " · inte förvalt"), value=sid))
-    res = choose_many(rows, chosen, title="Vilka steg ska ingå?")
+        kind = L("manual, in the checklist", "manuellt, i checklistan") if sid.startswith("m_") else L("the script", "skriptet")
+        rows.append(dict(label=label, hint=kind + ("" if sid in derived else L(" · not preselected", " · inte förvalt")), value=sid))
+    res = choose_many(rows, chosen, title=L("Which steps should be included?", "Vilka steg ska ingå?"))
     if res is None:
         raise Cancel()
     sel = set(res[0])
@@ -2337,32 +2428,32 @@ def wizard(a, intro=True):
     """Alla frågor i ordning. Svaren ligger kvar i a, så att "Ändra svaren" börjar från dem."""
     new_screen()
     if intro:
-        say("Vi bygger ett migreringsskript och en checklista. Enter behåller förslaget, Ctrl+C avbryter.", "happy",
+        say(L("We build a migration script and a checklist. Enter keeps the suggestion, Ctrl+C cancels.", "Vi bygger ett migreringsskript och en checklista. Enter behåller förslaget, Ctrl+C avbryter."), "happy",
             sub=f"muppa {VERSION}")
         print()
     ask_user(a)
     ask_malmapp(a)
     ask_folders(a)
     if any(FOLDER_BY_ID[f][2] == "shell" for f in a["folders"]):
-        a["cloud"] = ask_choice("Filer som bara finns i OneDrive-molnet (Files On-Demand)", CLOUD, a["cloud"])
+        a["cloud"] = ask_choice(L("Files that only exist in the OneDrive cloud (Files On-Demand)", "Filer som bara finns i OneDrive-molnet (Files On-Demand)"), CLOUD, a["cloud"])
     res = choose_many([dict(label=l, value=v) for v, l in BROWSERS], set(a["browsers"]),
-                      title="Webbläsare (bokmärken och lösenord)")
+                      title=L("Browsers (bookmarks and passwords)", "Webbläsare (bokmärken och lösenord)"))
     if res is None:
         raise Cancel()
     a["browsers"] = res[0]
     a["bitlocker"] = ask_choice("BitLocker", BITLOCKER, a["bitlocker"])
-    a["admin"] = confirm("Skapa ett lokalt admin-konto?", a["admin"])
+    a["admin"] = confirm(L("Create a local admin account?", "Skapa ett lokalt admin-konto?"), a["admin"])
     if a["admin"]:
-        a["admin_name"] = ask_text("Namn på admin-kontot (lösenordet frågas efter när skriptet körs)",
+        a["admin_name"] = ask_text(L("Name of the admin account (the password is asked for when the script runs)", "Namn på admin-kontot (lösenordet frågas efter när skriptet körs)"),
                                    default=a.get("admin_name") or "lokaladmin", required=True, check=check_admin)
-    a["domain"] = ask_choice("Domän och Entra ID", DOMAIN, a["domain"])
-    if confirm("Fylla i kund, ansvarig, dator m.m.? (valfritt, hamnar i checklistan)",
+    a["domain"] = ask_choice(L("Domain and Entra ID", "Domän och Entra ID"), DOMAIN, a["domain"])
+    if confirm(L("Fill in customer, responsible, computer etc.? (optional, goes in the checklist)", "Fylla i kund, ansvarig, dator m.m.? (valfritt, hamnar i checklistan)"),
                any(a.get(k) for k, _ in OPTIONAL_FIELDS)):
         for k, label in OPTIONAL_FIELDS:
             if k == "upn":
                 a[k] = ask_upn(a)
                 continue
-            a[k] = ask_text(label + dim(" (valfritt, enter hoppar över)"), default=a.get(k) or "")
+            a[k] = ask_text(label + dim(L(" (optional, enter skips)", " (valfritt, enter hoppar över)")), default=a.get(k) or "")
     ask_steps(a)
     global DIRTY
     DIRTY = False                    # granskningen visar allt igen, ingen extra paus
@@ -2373,15 +2464,15 @@ def summary_lines(a):
     steps = final_steps(a)
     w = width()
     names = [FOLDER_BY_ID[f][1] for f in a["folders"]] + a["custom"]
-    rows = [("Användare", f"{a['user']}  {dim(a['profile'])}"), ("Målmapp", malmapp_for(a)),
-            ("Mappar", ", ".join(names) or "inga"),
-            ("Webbläsare", ", ".join(dict(BROWSERS)[b] for b in a["browsers"]) or "inga"),
+    rows = [(L("User", "Användare"), f"{a['user']}  {dim(a['profile'])}"), (L("Target folder", "Målmapp"), malmapp_for(a)),
+            (L("Folders", "Mappar"), ", ".join(names) or L("none", "inga")),
+            (L("Browsers", "Webbläsare"), ", ".join(dict(BROWSERS)[b] for b in a["browsers"]) or L("none", "inga")),
             ("BitLocker", dict((v, l) for v, l, _ in BITLOCKER)[a["bitlocker"]]),
-            ("Admin-konto", (a.get("admin_name") or "lokaladmin") if "admin" in steps else "nej"),
-            ("Domän/Entra", dict((v, l) for v, l, _ in DOMAIN)[a["domain"]])]
+            (L("Admin account", "Admin-konto"), (a.get("admin_name") or "lokaladmin") if "admin" in steps else L("no", "nej")),
+            (L("Domain/Entra", "Domän/Entra"), dict((v, l) for v, l, _ in DOMAIN)[a["domain"]])]
     rows += [(SHORT_LABEL[k], a[k]) for k, _ in OPTIONAL_FIELDS if a.get(k)]
-    rows.append(("Steg", f"{len([s for s in steps if s in SCRIPT_STEPS])} i skriptet, "
-                         f"{len([s for s in steps if s.startswith('m_')])} manuella"))
+    n_scr, n_man = len([s for s in steps if s in SCRIPT_STEPS]), len([s for s in steps if s.startswith("m_")])
+    rows.append((L("Steps", "Steg"), L(f"{n_scr} in the script, {n_man} manual", f"{n_scr} i skriptet, {n_man} manuella")))
     lw = 13 if w >= 58 else 0
     res = []
     for k, v in rows:
@@ -2398,14 +2489,14 @@ def review(a, template_name=None):
     while True:
         name, ps = build_script(a)
         md = build_checklist(a, name)
-        rows = [dict(label="Spara skript och checklista", hint=f"~/Documents/Muppa/{name}", value="save", key="s"),
-                dict(label="Visa skriptet", hint=f"{len(ps.splitlines())} rader PowerShell", value="ps", key="v"),
-                dict(label="Visa checklistan", hint=f"{md.count('- [ ]')} punkter", value="md", key="c"),
-                dict(label="Ändra svaren…", hint="guiden igen, med dina svar ifyllda", value="edit", key="a"),
-                dict(label="Spara som mall…", hint="valen utan användaren, inga hemligheter", value="tpl", key="m"),
+        rows = [dict(label=L("Save script and checklist", "Spara skript och checklista"), hint=f"~/Documents/Muppa/{name}", value="save", key="s"),
+                dict(label=L("Show the script", "Visa skriptet"), hint=L(f"{len(ps.splitlines())} lines of PowerShell", f"{len(ps.splitlines())} rader PowerShell"), value="ps", key="v"),
+                dict(label=L("Show the checklist", "Visa checklistan"), hint=L(f"{md.count('- [ ]')} items", f"{md.count('- [ ]')} punkter"), value="md", key="c"),
+                dict(label=L("Change the answers…", "Ändra svaren…"), hint=L("the wizard again, with your answers filled in", "guiden igen, med dina svar ifyllda"), value="edit", key="a"),
+                dict(label=L("Save as template…", "Spara som mall…"), hint=L("the choices without the user, no secrets", "valen utan användaren, inga hemligheter"), value="tpl", key="m"),
                 dict(label="Avbryt", value="quit", key="q")]
-        v = choose(rows, msg=f"Klart för {a['user']}. Titta gärna på skriptet innan du sparar.", status=lambda: summary_lines(a),
-                   start=last, screen=True, footer="↑/↓ · enter · siffra/bokstav väljer · q avbryter",
+        v = choose(rows, msg=L(f"Ready for {a['user']}. Have a look at the script before you save.", f"Klart för {a['user']}. Titta gärna på skriptet innan du sparar."), status=lambda: summary_lines(a),
+                   start=last, screen=True, footer=L("↑/↓ · enter · digit/letter picks · q cancels", "↑/↓ · enter · siffra/bokstav väljer · q avbryter"),
                    sub=f"muppa {VERSION}")
         last = v
         if v in (None, "quit"):
@@ -2424,18 +2515,18 @@ def review(a, template_name=None):
         elif v == "save":
             p1, p2 = save_files(a)
             new_screen()
-            celebrate(f"Sparat! Skript och checklista för {a['user']} ligger i {OUT_DIR.name}.")
+            celebrate(L(f"Saved! Script and checklist for {a['user']} are in {OUT_DIR.name}.", f"Sparat! Skript och checklista för {a['user']} ligger i {OUT_DIR.name}."))
             print()
             out("   " + green("✔") + " " + str(p1))
             out("   " + green("✔") + " " + str(p2))
             print()
-            out("   " + bold("Kör på datorn som migreras") + dim(" (Windows PowerShell som administratör):"))
+            out("   " + bold(L("Run on the computer being migrated", "Kör på datorn som migreras")) + dim(L(" (Windows PowerShell as administrator):", " (Windows PowerShell som administratör):")))
             out("     " + cyan(f"powershell -ExecutionPolicy Bypass -File .\\{p1.name} -Torrkorning"))
             out("     " + cyan(f"powershell -ExecutionPolicy Bypass -File .\\{p1.name}"))
-            out("   " + dim("Sedan -Doman, -Entra och -Aterlas, som det står i checklistan."))
+            out("   " + dim(L("Then -Doman, -Entra and -Aterlas, as the checklist says.", "Sedan -Doman, -Entra och -Aterlas, som det står i checklistan.")))
             print()
             if not template_name and ITTY:
-                if confirm("Spara valen som mall till nästa gång?", False):
+                if confirm(L("Save the choices as a template for next time?", "Spara valen som mall till nästa gång?"), False):
                     ask_save_template(a, None)
             return True
 
@@ -2443,13 +2534,13 @@ def review(a, template_name=None):
 def ask_save_template(a, current):
     ts = templates()
     try:
-        name = ask_text("Mallens namn", default=current or ("Standard" if "Standard" not in ts else ""), required=True)
+        name = ask_text(L("Template name", "Mallens namn"), default=current or ("Standard" if "Standard" not in ts else ""), required=True)
     except Cancel:
         return
-    if name in ts and name != current and not confirm(f"Mallen {name} finns. Skriva över?", False):
+    if name in ts and name != current and not confirm(L(f"The template {name} exists. Overwrite?", f"Mallen {name} finns. Skriva över?"), False):
         return
     save_template(a, name)
-    out("   " + green("✔") + f" Mallen {bold(name)} sparad: " + dim(template_summary(templates()[name])))
+    out("   " + green("✔") + L(f" Template {bold(name)} saved: ", f" Mallen {bold(name)} sparad: ") + dim(template_summary(templates()[name])))
 
 
 def run_wizard(template=None):
@@ -2457,7 +2548,7 @@ def run_wizard(template=None):
     try:
         wizard(a)
     except Cancel:
-        out(dim("  Avbrutet."))
+        out(dim(L("  Cancelled.", "  Avbrutet.")))
         return False
     return review(a, template)
 
@@ -2467,29 +2558,31 @@ def templates_menu():
     while True:
         ts = templates()
         if not ts:
-            say("Inga mallar än. Gör en migrering och välj Spara som mall, så hamnar valen här.", "happy")
+            say(L("No templates yet. Do a migration and choose Save as template, and the choices end up here.", "Inga mallar än. Gör en migrering och välj Spara som mall, så hamnar valen här."), "happy")
             return
         rows = [dict(label=n, hint=template_summary(t), value=n) for n, t in sorted(ts.items())]
-        rows.append(dict(label="Tillbaka", value="__back__", key="q"))
-        v = choose(rows, msg="Välj en mall för att använda eller ta bort den.", screen=True, sub=f"muppa {VERSION}")
+        rows.append(dict(label=L("Back", "Tillbaka"), value="__back__", key="q"))
+        v = choose(rows, msg=L("Pick a template to use or delete it.", "Välj en mall för att använda eller ta bort den."), screen=True, sub=f"muppa {VERSION}")
         if v in (None, "__back__"):
             return
-        act = choose([dict(label="Använd", hint="starta guiden med mallens val", value="use"),
-                      dict(label="Ta bort", value="del"),
-                      dict(label="Tillbaka", value="back", key="q")], title=f"Mall: {v}")
+        act = choose([dict(label=L("Use", "Använd"), hint=L("start the wizard with the template's choices", "starta guiden med mallens val"), value="use"),
+                      dict(label=L("Delete", "Ta bort"), value="del"),
+                      dict(label=L("Back", "Tillbaka"), value="back", key="q")], title=L(f"Template: {v}", f"Mall: {v}"))
         if act == "use":
             run_wizard(v)
             return
-        if act == "del" and confirm(f"Ta bort mallen {v}?", False):
+        if act == "del" and confirm(L(f"Delete the template {v}?", f"Ta bort mallen {v}?"), False):
             ts.pop(v, None)
             save_json(TEMPLATES, ts)
 
 
 def greeting():
     if not templates():
-        return ("Hej! Jag är Muppa. Jag bygger ett PowerShell-skript och en checklista för att flytta en dator "
-                "från lokal AD-domän till Entra ID."), "happy"
-    return "Välkommen tillbaka! Välj en mall så går det snabbt, eller börja från början.", "happy"
+        return L("Hi! I'm Muppa. I build a PowerShell script and a checklist for moving a computer "
+                 "from an on-premises AD domain to Entra ID.",
+                 "Hej! Jag är Muppa. Jag bygger ett PowerShell-skript och en checklista för att flytta en dator "
+                 "från lokal AD-domän till Entra ID."), "happy"
+    return L("Welcome back! Pick a template to be quick, or start from scratch.", "Välkommen tillbaka! Välj en mall så går det snabbt, eller börja från början."), "happy"
 
 
 def main_menu():
@@ -2497,20 +2590,22 @@ def main_menu():
     while True:
         msg, mood = greeting()
         ts = templates()
-        rows = [dict(label="Ny migrering…", hint="guiden: frågor → skript + checklista", value="new", key="n")]
+        rows = [dict(label=L("New migration…", "Ny migrering…"), hint=L("the wizard: questions → script + checklist", "guiden: frågor → skript + checklista"), value="new", key="n")]
         if ts:
-            rows.append(("head", "Från mall"))
+            rows.append(("head", L("From template", "Från mall")))
             rows += [dict(label=n, hint=template_summary(t), value="t:" + n) for n, t in sorted(ts.items())[:6]]
             rows.append(("head", ""))
-        rows += [dict(label="Mallar…", hint=f"{len(ts)} sparade" if ts else "inga än", value="tpl", key="m"),
-                 dict(label="Öppna mappen med skript", hint=str(OUT_DIR), value="open", key="o"),
-                 dict(label="Avsluta", value="quit", key="q")]
+        rows += [dict(label=L("Templates…", "Mallar…"), hint=L(f"{len(ts)} saved", f"{len(ts)} sparade") if ts else L("none yet", "inga än"), value="tpl", key="m"),
+                 dict(label=L("Open the folder with scripts", "Öppna mappen med skript"), hint=str(OUT_DIR), value="open", key="o"),
+                 dict(label=L("Language: English", "Språk: svenska"), hint=L("switch to Swedish (all the tools)", "byt till engelska (alla verktygen)"),
+                      value="lang", key="s"),
+                 dict(label=L("Quit", "Avsluta"), value="quit", key="q")]
         v = choose(rows, msg=msg, mood=mood, start=last or "new", screen=True,
-                   footer="↑/↓ · enter · siffra/bokstav väljer · q avslutar", sub=f"muppa {VERSION}")
+                   footer=L("↑/↓ · enter · digit/letter picks · q quits", "↑/↓ · enter · siffra/bokstav väljer · q avslutar"), sub=f"muppa {VERSION}")
         last = v
         if v in (None, "quit"):
             print()
-            say(random.choice(["Hej då!", "Vi ses!", "Lycka till med migreringen!"]), "happy")
+            say(random.choice([L("Bye!", "Hej då!"), L("See you!", "Vi ses!"), L("Good luck with the migration!", "Lycka till med migreringen!")]), "happy")
             print()
             return
         try:
@@ -2523,14 +2618,19 @@ def main_menu():
             elif v == "open":
                 OUT_DIR.mkdir(parents=True, exist_ok=True)
                 open_path(OUT_DIR)
+            elif v == "lang":
+                set_lang("sv" if LANG == "en" else "en")
+                sys.stdout.write("\033[H\033[2J")
+                sys.stdout.flush()
+                os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
         except Cancel:
-            out(dim("  Avbrutet."))
+            out(dim(L("  Cancelled.", "  Avbrutet.")))
 
 
 # ───────────────────────────── CLI ─────────────────────────────
 def cmd_create(args):
     if args.mall and args.mall not in templates():
-        print(f"  Hittar ingen mall som heter {args.mall}. Se muppa mallar.", file=sys.stderr)
+        print(L(f"  No template called {args.mall}. See: muppa templates", f"  Hittar ingen mall som heter {args.mall}. Se muppa mallar."), file=sys.stderr)
         return 1
     a = new_answers(args.mall)
     a["user"], a["profile"] = split_user(args.anvandare)
@@ -2540,7 +2640,7 @@ def cmd_create(args):
         ids = [x.strip() for x in args.mappar.split(",") if x.strip()]
         bad = [x for x in ids if x not in FOLDER_BY_ID]
         if bad:
-            print(f"  Okända mappar: {', '.join(bad)}. Välj bland: {', '.join(FOLDER_BY_ID)}", file=sys.stderr)
+            print(L(f"  Unknown folders: {', '.join(bad)}. Choose from: {', '.join(FOLDER_BY_ID)}", f"  Okända mappar: {', '.join(bad)}. Välj bland: {', '.join(FOLDER_BY_ID)}"), file=sys.stderr)
             return 1
         a["folders"] = ids
     if args.egen:
@@ -2566,7 +2666,7 @@ def cmd_create(args):
 def list_templates():
     ts = templates()
     if not ts:
-        out("  Inga mallar. Spara en från guiden (muppa ny).")
+        out(L("  No templates. Save one from the wizard (muppa new).", "  Inga mallar. Spara en från guiden (muppa ny)."))
         return
     w = width()
     nw = min(24, max(len(n) for n in ts) + 2)
@@ -2581,55 +2681,65 @@ def main(argv=None):
     if "--no-anim" in argv:
         ANIM = False
         argv = [x for x in argv if x != "--no-anim"]
-    ap = argparse.ArgumentParser(prog="muppa", description="Muppa – migrera en dator från lokal AD till Entra ID.")
+    ap = argparse.ArgumentParser(prog="muppa", description=L("Muppa – migrate a computer from on-premises AD to Entra ID.", "Muppa – migrera en dator från lokal AD till Entra ID."))
     ap.add_argument("--version", action="version", version="muppa " + VERSION)
     sub = ap.add_subparsers(dest="cmd")
-    n = sub.add_parser("ny", help="guiden")
-    n.add_argument("--mall")
-    s = sub.add_parser("skapa", help="skapa skript + checklista utan frågor")
-    s.add_argument("anvandare", help="användarnamn eller profilmapp")
-    s.add_argument("--mall")
-    s.add_argument("--malmapp", help=r"standard C:\temp\{användare}")
-    s.add_argument("--mappar", help="t.ex. skrivbord,dokument,bilder,hamtade (" + ",".join(FOLDER_BY_ID) + ")")
-    s.add_argument("--egen", action="append", help="egen sökväg (kan upprepas)")
-    s.add_argument("--webblasare", help="edge,chrome eller tomt")
+    n = sub.add_parser("new", aliases=["ny"], help=L("the wizard", "guiden"))
+    n.add_argument("--template", "--mall", dest="mall")
+    s = sub.add_parser("create", aliases=["skapa"], help=L("create script + checklist without questions", "skapa skript + checklista utan frågor"))
+    s.add_argument("anvandare", help=L("user name or profile folder", "användarnamn eller profilmapp"))
+    s.add_argument("--template", "--mall", dest="mall")
+    s.add_argument("--target", "--malmapp", dest="malmapp", help=L(r"default C:\temp\{användare}", r"standard C:\temp\{användare}"))
+    s.add_argument("--folders", "--mappar", dest="mappar", help=L("e.g. skrivbord,dokument,bilder,hamtade (", "t.ex. skrivbord,dokument,bilder,hamtade (") + ",".join(FOLDER_BY_ID) + ")")
+    s.add_argument("--path", "--egen", dest="egen", action="append", help=L("own path (can be repeated)", "egen sökväg (kan upprepas)"))
+    s.add_argument("--browsers", "--webblasare", dest="webblasare", help=L("edge,chrome or empty", "edge,chrome eller tomt"))
     s.add_argument("--bitlocker", choices=[x[0] for x in BITLOCKER])
-    s.add_argument("--doman", dest="domain", choices=[x[0] for x in DOMAIN])
-    s.add_argument("--molnfiler", dest="cloud", choices=[x[0] for x in CLOUD])
-    s.add_argument("--admin", help="namn på lokalt admin-konto")
-    s.add_argument("--ingen-admin", action="store_true")
+    s.add_argument("--domain", "--doman", dest="domain", choices=[x[0] for x in DOMAIN])
+    s.add_argument("--cloud-files", "--molnfiler", dest="cloud", choices=[x[0] for x in CLOUD])
+    s.add_argument("--admin", help=L("name of the local admin account", "namn på lokalt admin-konto"))
+    s.add_argument("--no-admin", "--ingen-admin", dest="ingen_admin", action="store_true")
+    en_flag = {"kund": "--customer", "ansvarig": "--responsible", "dator": "--computer", "tekniker": "--technician", "arende": "--ticket"}
     for k, label in OPTIONAL_FIELDS:
-        s.add_argument("--" + k, help=label)
-    sub.add_parser("mallar", help="lista sparade mallar")
-    sub.add_parser("hej")
+        s.add_argument(*([en_flag[k]] if k in en_flag else []), "--" + k, dest=k, help=label)
+    sub.add_parser("templates", aliases=["mallar"], help=L("list saved templates", "lista sparade mallar"))
+    sub.add_parser("hello", aliases=["hej"])
+    lg = sub.add_parser("lang", aliases=["språk", "sprak"], help=L("show or set the language (en, sv) for the whole troupe",
+                                                                   "visa eller välj språk (en, sv) för hela truppen"))
+    lg.add_argument("value", nargs="?", choices=["en", "sv"])
     a = ap.parse_args(argv)
+    a.cmd = {"ny": "new", "skapa": "create", "mallar": "templates", "hej": "hello", "språk": "lang", "sprak": "lang"}.get(a.cmd, a.cmd)
+    if a.cmd == "lang":
+        if a.value:
+            set_lang(a.value)
+        print(L("  Language: English · change with: muppa lang sv", "  Språk: svenska · byt med: muppa lang en"))
+        return 0
     try:
         if a.cmd is None:
             if not ITTY or not TTY:
-                print(__doc__)
+                print(L(__doc__, DOC_SV))
                 return 0
             signal.signal(signal.SIGINT, signal.default_int_handler)
             main_menu()
             return 0
-        if a.cmd == "ny":
+        if a.cmd == "new":
             if not ITTY:
-                sys.exit("  guiden behöver en riktig terminal (eller: muppa skapa ANVÄNDARE)")
+                sys.exit(L("  the wizard needs a real terminal (or: muppa create USER)", "  guiden behöver en riktig terminal (eller: muppa skapa ANVÄNDARE)"))
             if a.mall and a.mall not in templates():
-                say(f"Hittar ingen mall som heter {a.mall}. Se muppa mallar.", "sad")
+                say(L(f"No template called {a.mall}. See: muppa templates", f"Hittar ingen mall som heter {a.mall}. Se muppa mallar."), "sad")
                 return 1
             return 0 if run_wizard(a.mall) else 1
-        if a.cmd == "skapa":
+        if a.cmd == "create":
             return cmd_create(a)
-        if a.cmd == "mallar":
+        if a.cmd == "templates":
             list_templates()
             return 0
-        if a.cmd == "hej":
+        if a.cmd == "hello":
             print()
             say(random.choice(JOKES), random.choice(["happy", "proud", "wow", "left"]))
             print()
             return 0
     except Cancel:
-        out(dim("  Avbrutet."))
+        out(dim(L("  Cancelled.", "  Avbrutet.")))
         return 1
     except KeyboardInterrupt:
         sys.stdout.write("\033[?25h\n")

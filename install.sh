@@ -5,6 +5,12 @@
 # Styr källan med MUPPA_REPO=ägare/repo och MUPPA_BRANCH=gren (eller en release-tagg).
 # Inga frågor: exitkod 0 = installerat, annat = fel.
 set -eu
+# Language: TRUPPA_LANG, else ~/.truppa/config.json (shared by the whole troupe), else English
+TL="${TRUPPA_LANG:-}"
+if [ -z "$TL" ] && [ -f "$HOME/.truppa/config.json" ]; then
+  TL="$(sed -n 's/.*"lang"[^"]*"\([a-z]*\)".*/\1/p' "$HOME/.truppa/config.json" 2>/dev/null | head -n 1)"
+fi
+t() { case "$TL" in sv*) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }
 START="$(date +%s)"
 
 REPO="${MUPPA_REPO:-pipebreak33/muppa}"
@@ -25,8 +31,8 @@ for c in python3 python; do
 done
 if [ -z "$PY" ]; then
   case "$(uname -s)" in
-    Darwin) die "Python 3.8+ saknas. Kör: xcode-select --install   (eller: brew install python)";;
-    *)      die "Python 3.8+ saknas. Kör: sudo apt install python3   (eller dnf/pacman motsvarande)";;
+    Darwin) die "$(t "Python 3.8+ is missing. Run: xcode-select --install   (or: brew install python)" "Python 3.8+ saknas. Kör: xcode-select --install   (eller: brew install python)")";;
+    *)      die "$(t "Python 3.8+ is missing. Run: sudo apt install python3   (or the dnf/pacman equivalent)" "Python 3.8+ saknas. Kör: sudo apt install python3   (eller dnf/pacman motsvarande)")";;
   esac
 fi
 
@@ -37,25 +43,25 @@ case "$0" in
     HERE="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
     if [ -n "$HERE" ] && [ -f "$HERE/muppa.py" ] && [ "${MUPPA_FROM_WEB:-}" != "1" ]; then
       SRC="$HERE"
-      say "Installerar från $HERE"
+      say "$(t "Installing from $HERE" "Installerar från $HERE")"
     fi;;
 esac
 TMP=""
 cleanup() { if [ -n "$TMP" ]; then rm -rf "$TMP"; fi; return 0; }
 trap cleanup EXIT
 if [ -z "$SRC" ]; then
-  command -v curl >/dev/null 2>&1 || die "curl saknas."
-  command -v tar >/dev/null 2>&1 || die "tar saknas."
+  command -v curl >/dev/null 2>&1 || die "$(t "curl is missing." "curl saknas.")"
+  command -v tar >/dev/null 2>&1 || die "$(t "tar is missing." "tar saknas.")"
   TMP="$(mktemp -d)"
-  say "Hämtar Muppa från github.com/$REPO ($BRANCH)"
+  say "$(t "Fetching Muppa from github.com/$REPO ($BRANCH)" "Hämtar Muppa från github.com/$REPO ($BRANCH)")"
   curl -fsSL "https://github.com/$REPO/archive/$BRANCH.tar.gz" -o "$TMP/muppa.tar.gz" \
-    || die "nedladdningen misslyckades – kolla nätet eller MUPPA_REPO/MUPPA_BRANCH"
-  tar -xzf "$TMP/muppa.tar.gz" -C "$TMP" || die "kunde inte packa upp arkivet"
+    || die "$(t "the download failed: check the network or MUPPA_REPO/MUPPA_BRANCH" "nedladdningen misslyckades – kolla nätet eller MUPPA_REPO/MUPPA_BRANCH")"
+  tar -xzf "$TMP/muppa.tar.gz" -C "$TMP" || die "$(t "could not unpack the archive" "kunde inte packa upp arkivet")"
   SRC="$(find "$TMP" -maxdepth 2 -name muppa.py -exec dirname {} \; | head -n 1)"
-  [ -n "$SRC" ] || die "arkivet innehåller inte Muppa"
+  [ -n "$SRC" ] || die "$(t "the archive does not contain Muppa" "arkivet innehåller inte Muppa")"
 fi
 "$PY" -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read())' "$SRC/muppa.py" \
-  || die "muppa.py är trasig"
+  || die "$(t "muppa.py is broken" "muppa.py är trasig")"
 
 # 3. Byt ut programmet (~/.muppa/app). Dina mallar i ~/.muppa rörs inte.
 mkdir -p "$DIR" "$BIN"
@@ -85,11 +91,11 @@ case ":$PATH:" in
       *)      RC="$HOME/.profile" ;;
     esac
     grep -qs '.local/bin' "$RC" 2>/dev/null || printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"
-    say "La till ~/.local/bin i PATH ($RC). Öppna en ny terminal."
+    say "$(t "Added ~/.local/bin to PATH ($RC). Open a new terminal." "La till ~/.local/bin i PATH ($RC). Öppna en ny terminal.")"
     ;;
 esac
 
 VER="$("$PY" "$APP/muppa.py" --version 2>/dev/null || echo muppa)"
 SECS=$(( $(date +%s) - START )); if [ "$SECS" -ge 60 ]; then TOOK="$((SECS / 60)) min $((SECS % 60)) s"; else TOOK="$SECS s"; fi
-printf '\n  \033[38;5;42m✔\033[0m %s installerad på %s. Kör: \033[1mmuppa\033[0m\n' "$VER" "$TOOK"
-printf '  \033[2mAvinstallera: curl -fsSL https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.sh | sh\033[0m\n\n'
+printf "$(t '\n  \033[38;5;42m✔\033[0m %s installed in %s. Run: \033[1mmuppa\033[0m\n' '\n  \033[38;5;42m✔\033[0m %s installerad på %s. Kör: \033[1mmuppa\033[0m\n')" "$VER" "$TOOK"
+printf "$(t '  \033[2mUninstall: curl -fsSL https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.sh | sh\033[0m\n\n' '  \033[2mAvinstallera: curl -fsSL https://raw.githubusercontent.com/pipebreak33/muppa/main/uninstall.sh | sh\033[0m\n\n')"
